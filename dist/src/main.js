@@ -189,6 +189,7 @@ const ui = {
   beerBadge: document.getElementById('beer-badge'),
   hammerPanel: document.getElementById('hammer-panel'),
   puzzlePanel: document.getElementById('puzzle-panel'),
+  dialoguePanel: document.getElementById('dialogue-panel'),
   overlay: document.getElementById('overlay'),
 };
 
@@ -262,6 +263,37 @@ function showPuzzle(puzzleId) {
 }
 function hidePuzzle() { activePuzzle = null; ui.puzzlePanel.classList.add('hidden'); }
 
+// ---------- conversation UI (Phase 3: data-driven dialogue trees, docs/08) ----------
+// The engine already spoke the node lines through its message pipeline (log +
+// TTS). This panel only renders the remaining choices. Keyboard 1–9 mirrors
+// the buttons so the game stays completable keyboard-only (docs/17).
+
+function refreshDialogue() {
+  if (!engine.conversation) { ui.dialoguePanel.classList.add('hidden'); return; }
+  const conv = content.conversations[engine.conversation.id];
+  const node = conv.nodes[engine.conversation.node];
+  if (!node) { ui.dialoguePanel.classList.add('hidden'); return; }
+  // Re-apply the engine's deterministic condition filter for display parity.
+  const visible = (node.choices || []).filter((c) => engine._conditionsMet(engine._scene(), c));
+  if (visible.length === 0) { ui.dialoguePanel.classList.add('hidden'); return; }
+  ui.dialoguePanel.classList.remove('hidden');
+  ui.dialoguePanel.innerHTML = `<div class="dialogue-prompt">${node.prompt || 'You:'}</div>`;
+  visible.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.textContent = `${i + 1}. ${c.label}`;
+    b.onclick = () => { engine.chooseConversation(i); refreshHud(); };
+    ui.dialoguePanel.appendChild(b);
+  });
+}
+
+function _visibleChoiceIndices() {
+  if (!engine.conversation) return [];
+  const conv = content.conversations[engine.conversation.id];
+  const node = conv?.nodes[engine.conversation.node];
+  if (!node) return [];
+  return (node.choices || []).map((c, i) => ({ c, i })).filter(({ c }) => engine._conditionsMet(engine._scene(), c));
+}
+
 ui.overlay.classList.add('hidden');
 function showOverlay(html, buttons) {
   ui.overlay.classList.remove('hidden');
@@ -294,6 +326,8 @@ function showLogLine(perceived) {
   speakLine(perceived);
 }
 engine.bus.on(GameEvents.PUZZLE_STEP, ({ puzzleId }) => showPuzzle(puzzleId));
+engine.bus.on(GameEvents.CONVERSATION_NODE, () => refreshDialogue());
+engine.bus.on(GameEvents.CONVERSATION_ENDED, () => refreshDialogue());
 engine.bus.on(GameEvents.HAMMER_EVENT_STARTED, () => refreshHammer());
 engine.bus.on(GameEvents.HAMMER_EVENT_RESOLVED, () => refreshHammer());
 engine.bus.on(GameEvents.BEER_STATE_CHANGED, ({ state }) => {
@@ -332,12 +366,15 @@ document.addEventListener('keydown', (e) => {
   else if (k === 'd') engine.drinkBeer();
   else if (k === 's') { saveGame(engine); engine.say('Game saved (localStorage).'); }
   else if (k === 'l') { if (loadGame(engine)) engine.say('Loaded.'); }
-  else if (k === '1' && engine.hammer) engine.hammerChoice(0);
-  else if (k === '2' && engine.hammer) engine.hammerChoice(1);
-  else if (k === '3' && engine.hammer) engine.hammerChoice(2);
-  else if (k === 'escape') hidePuzzle();
+  else if (/^[1-9]$/.test(k)) {
+    const idx = Number(k) - 1;
+    if (engine.conversation) engine.chooseConversation(idx);
+    else if (engine.hammer) engine.hammerChoice(idx);
+  }
+  else if (k === 'escape') { hidePuzzle(); engine.endConversation?.(); }
   refreshHud();
   refreshHammer();
+  refreshDialogue();
 });
 
 // toolbar buttons

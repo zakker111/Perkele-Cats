@@ -48,6 +48,89 @@ export const content = {
     },
   },
 
+  // Branching conversation trees (docs/08 npc-template format; Phase 3).
+  // Choices may carry conditions {flags/items} — hidden until met (deterministic).
+  conversations: {
+    conv_maija: {
+      start: 'greet',
+      nodes: {
+        greet: {
+          once: true,
+          setFlag: 'met_maija',
+          lines: [
+            { speaker: 'Maija', text: 'You smell like sauna smoke and bad decisions.' },
+            { speaker: 'Maija', text: 'Take the pipe. Or the beer. Never both at once. That is the law.', critical: true },
+          ],
+          choices: [
+            { label: '"What is down the forest road?"', goto: 'road' },
+            { label: '"Any advice about cats?"', goto: 'cats' },
+            { label: 'Nod stoically and leave', hint: 'end' },
+          ],
+        },
+        road: {
+          lines: [
+            { speaker: 'Maija', text: 'Tarmo. Hammer. Swing zone. That is the whole forecast.' },
+            { speaker: 'Maija', text: 'Also mushrooms. If the stove offers you one, it has earned it.', critical: true },
+          ],
+          choices: [
+            { label: '"What about cats?"', goto: 'cats' },
+            { label: 'Thank her and go', hint: 'end' },
+          ],
+        },
+        cats: {
+          lines: [
+            { speaker: 'Maija', text: 'Cats? On the road there is a PACK now. Three of them. Unionized.' },
+            { speaker: 'Maija', text: 'Pipe makes noise. Noise makes cats reconsider. Beer makes you reconsider everything.', critical: true },
+          ],
+          givesItem: [{ item: 'item_berries', count: 1 }],
+          choices: [{ label: 'Take the berries she thrusts at you', hint: 'end' }],
+        },
+      },
+    },
+    conv_tarmo: {
+      start: 'fence',
+      nodes: {
+        fence: {
+          lines: [
+            { speaker: 'Tarmo', text: 'I am fixing the fence. With a HAMMER. It is emotional support construction.' },
+          ],
+          choices: [
+            { label: '"Is the swing zone dangerous?"', goto: 'zone' },
+            { label: '"Have you met my cat problem?"', goto: 'catbond', conditions: { flags: ['met_cat_pack'] } },
+            { label: 'Watch him hammer in respectful silence', hint: 'end' },
+          ],
+        },
+        zone: {
+          lines: [
+            { speaker: 'Tarmo', text: 'The swing zone is everywhere. Sorry!' },
+            { speaker: 'Tarmo', text: 'If I wind up: dodge left, or make loud pipe noise. Do NOT network with me.', critical: true },
+          ],
+          choices: [
+            { label: '"Cat problem? You seem like a cat expert."', goto: 'catbond', conditions: { flags: ['met_cat_pack'] } },
+            { label: 'Back away slowly', hint: 'end' },
+          ],
+        },
+        catbond: {
+          once: true,
+          setFlag: 'tarmo_ally',
+          lines: [
+            { speaker: 'Tarmo', text: 'CATS?! Tell them Tarmo says the forest is CLOSED for hammer business.' },
+            { speaker: 'Tarmo', text: 'Here. Field rye. Ate one myself. Metaphorically. It is a very good rye.' },
+          ],
+          givesItem: [{ item: 'item_bread', count: 2 }],
+          choices: [{ label: 'Shake the hammer-free hand', hint: 'end' }],
+        },
+      },
+    },
+  },
+
+  // Perkele cat packs (docs/09): coordinated hazards sharing ONE cooldown.
+  packs: {
+    pack_forest: {
+      howl: 'THE PACK attacks! -2 health. Three tiny warlords, one opinion: you.',
+    },
+  },
+
   puzzles: {
     puzzle_stove: {
       intro: 'The old wood stove refuses to light. Three dials stare back at you.',
@@ -120,7 +203,7 @@ export const content = {
           text: 'The sign says: click glowing things. Clicking non-glowing things is discouraged.',
           surrealText: 'The sign now reads: CLICK ANYTHING. ANARCHY IS TEMPORARY. HYDRATION IS FOREVER.' },
         { id: 'obj_stick', kind: 'item', x: 8, y: 5, label: 'Stick', action: 'take', givesItem: 'item_stick' },
-        { id: 'obj_maija', kind: 'npc', x: 5, y: 2, label: 'Maija', action: 'dialogue', dialogue: 'dlg_maija_intro' },
+        { id: 'obj_maija', kind: 'npc', x: 5, y: 2, label: 'Maija', action: 'dialogue', conversation: 'conv_maija' },
         { id: 'obj_pipe_case', kind: 'item', x: 3, y: 5, label: 'Pipe case', action: 'inspect',
           text: 'A velvet-lined case hums faintly. Six opinions, packaged for travel.',
           surrealText: 'The case purrs when you look at it sideways. Like a small wooden cat.' },
@@ -171,9 +254,10 @@ export const content = {
       intro: 'A forest road. Birds sing. Somewhere, a cat sharpens tiny claws.',
       walk: { width: 14, height: 8, blocked: [[0,0],[13,0],[0,7],[13,7],[6,3],[7,3]] },
       objects: [
-        { id: 'obj_cat', kind: 'hazard', x: 9, y: 2, label: 'Perkele Cat', action: 'cat',
-          hitText: 'PERKELE CAT attacks from an oak tree! -2 health. It hisses "PERKELE" with feeling.' },
-        { id: 'obj_tarmo', kind: 'npc', x: 4, y: 2, label: 'Tarmo + hammer', action: 'dialogue', dialogue: 'dlg_tarmo_grumble' },
+        { id: 'obj_cat', kind: 'hazard', x: 9, y: 2, label: 'Perkele Cat', action: 'cat', pack: 'pack_forest' },
+        { id: 'obj_cat2', kind: 'hazard', x: 10, y: 1, label: 'Perkele Cat (flanker)', action: 'cat', pack: 'pack_forest' },
+        { id: 'obj_cat3', kind: 'hazard', x: 8, y: 4, label: 'Perkele Cat (manager)', action: 'cat', pack: 'pack_forest' },
+        { id: 'obj_tarmo', kind: 'npc', x: 4, y: 2, label: 'Tarmo + hammer', action: 'dialogue', conversation: 'conv_tarmo' },
         { id: 'obj_hammer_zone', kind: 'event', x: 5, y: 5, label: 'Swing zone', action: 'hammer-event',
           npc: 'Tarmo', telegraph: 'He winds up. Choose FAST:',
           options: [

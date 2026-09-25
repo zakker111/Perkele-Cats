@@ -43,6 +43,23 @@ export function validateContent(content) {
   const dialogueIds = new Set(content.dialogue ? Object.keys(content.dialogue) : []);
   for (const [id, d] of Object.entries(content.dialogue || {})) {
     if (!Array.isArray(d.lines) || d.lines.length === 0) err(`dialogue ${id}: empty`);
+    for (const g of d.givesItem || []) {
+      if (!itemIds.has(g.item)) err(`dialogue ${id}: gives unknown item ${g.item}`);
+    }
+  }
+
+  // conversations (branching trees, docs/08 npc-template; Phase 3)
+  for (const [id, c] of Object.entries(content.conversations || {})) {
+    if (!c.nodes || !c.nodes[c.start]) err(`conversation ${id}: missing start node "${c.start}"`);
+    for (const [nid, n] of Object.entries(c.nodes || {})) {
+      if (!Array.isArray(n.lines) || n.lines.length === 0) err(`conversation ${id}/${nid}: empty lines`);
+      for (const ch of n.choices || []) {
+        if (ch.goto && !(c.nodes || {})[ch.goto]) err(`conversation ${id}/${nid}: choice -> unknown node ${ch.goto}`);
+      }
+      for (const g of n.givesItem || []) {
+        if (!itemIds.has(g.item)) err(`conversation ${id}/${nid}: gives unknown item ${g.item}`);
+      }
+    }
   }
 
   // scenes
@@ -60,6 +77,8 @@ export function validateContent(content) {
       if (o.requiresItem && !itemIds.has(o.requiresItem)) err(`scene ${s.id}/${o.id}: unknown requiresItem ${o.requiresItem}`);
       if (o.puzzle && !puzzleIds.has(o.puzzle)) err(`scene ${s.id}/${o.id}: unknown puzzle ${o.puzzle}`);
       if (o.dialogue && !dialogueIds.has(o.dialogue)) err(`scene ${s.id}/${o.id}: unknown dialogue ${o.dialogue}`);
+      if (o.conversation && !(content.conversations || {})[o.conversation]) err(`scene ${s.id}/${o.id}: unknown conversation ${o.conversation}`);
+      if (o.pack && !(content.packs || {})[o.pack]) err(`scene ${s.id}/${o.id}: unknown cat pack ${o.pack}`);
       if (o.exit && !(s.exits || []).some((e) => e.name === o.exit)) err(`scene ${s.id}/${o.id}: unknown exit ${o.exit}`);
     }
     for (const e of s.exits || []) {

@@ -149,6 +149,8 @@ body.reduced-distortion main { animation: none; }
 .hammer-title { color: #ffb3b3; font-weight: bold; }
 #puzzle-panel { bottom: 20px; border-color: #c9a0ff; background: #1c1626; }
 .puzzle-q { color: #e2d4ff; font-weight: bold; }
+#dialogue-panel { top: 70px; border-color: #8fd0a0; background: #14231a; }
+.dialogue-prompt { color: #bfe8cc; font-weight: bold; }
 .hint { align-self: flex-end; opacity: 0.8; }
 
 .hidden { display: none !important; }

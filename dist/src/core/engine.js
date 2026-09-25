@@ -7,6 +7,14 @@ import { Clock } from './clock.js';
 import { Player, EquipmentState, BeerState, MAX_SHOTS } from './player.js';
 import { filterDrunkText, suspiciousNpcLine, surrealInspect, isCriticalLine, CRITICAL_LINE_MARKER } from './beer-logic.js';
 
+// docs/22: rare repeat-encounter gag — callbacks beat repetition. Seppo's one
+// miracle never repeats, but running into him again cycles these deadpan lines.
+export const SEPPO_REPEAT_GAGS = Object.freeze([
+  'Seppo raises one eyebrow. That is the entire conversation.',
+  '"You again." Seppo disappears into a birch tree that was definitely too thin.',
+  'Seppo points at your equipment choice, sighs like a sauna stove, and leaves.',
+]);
+
 export class Engine {
   constructor(content) {
     // BUG-6 fix: engine state (taken objects, scene mutations) must never leak
@@ -28,6 +36,7 @@ export class Engine {
     this.puzzleRuntime = {}; // puzzleId -> {step}
     this.gameOver = false;
     this.won = false;
+    this.conversation = null; // active branching conversation {id, node}
     this.reducedDistortion = false; // set by UI layer; disables drunk text filter (docs/17)
 
     this.bus.on(GameEvents.MESSAGE, ({ text }) => {
@@ -193,7 +202,8 @@ export class Engine {
         this.say(this.startPuzzle(obj.puzzle)?.intro || 'The puzzle refuses to puzzle today.');
         break;
       case 'dialogue':
-        this.dialogue(obj.dialogue);
+        if (obj.conversation) this.startConversation(obj.conversation);
+        else this.dialogue(obj.dialogue);
         break;
       case 'hammer-event':
         this.startHammerEvent(obj);
@@ -401,6 +411,10 @@ export class Engine {
   dialogue(dialogueId) {
     const d = this.content.dialogue[dialogueId];
     if (!d) return;
+    this._speakDialogue(d, dialogueId);
+  }
+
+  _speakDialogue(d, dialogueId) {
     this.bus.emit(GameEvents.DIALOGUE_STARTED, { dialogueId });
     for (const line of d.lines) {
       // docs/05 + docs/17: critical rule/instruction lines bypass the drunk
@@ -409,7 +423,107 @@ export class Engine {
       else this.say(`${line.speaker}: ${line.text}`);
     }
     if (d.setFlag) this.setFlag(d.setFlag);
+    if (Array.isArray(d.givesItem)) {
+      for (const g of d.givesItem) {
+        if (!this.flags[`dlg_given:${dialogueId}:${g.item}`]) {
+          this.player.addItem(g.item, g.count || 1);
+          this.setFlag(`dlg_given:${dialogueId}:${g.item}`);
+          this.say(`You pocket the ${this._itemName(g.item)}. They insist.`);
+        }
+      }
+    }
     this.bus.emit(GameEvents.DIALOGUE_FINISHED, { dialogueId });
+  }
+
+  // ---------- branching conversation trees (docs/08 NPC template, Phase 3) ----------
+  // Data-driven nodes: { id, lines[], once?, setFlag?, givesItem?, conditions?,
+  //                       choices: [{ label, goto?, hint? }] }
+  // Branching is deterministic; state lives in flags (stable-ID convention).
+
+  startConversation(convId) {
+    if (this.conversation) {
+      this.say('A conversation is already happening. Finnish politeness forbids queuing two.');
+      return null;
+    }
+    const conv = this.content.conversations?.[convId];
+    if (!conv || !conv.nodes?.[conv.start]) return null;
+    this.conversation = { id: convId, node: conv.start };
+    return this._conversationStep();
+  }
+
+  chooseConversation(choiceIndex) {
+    if (!this.conversation) return null;
+    const conv = this.content.conversations[this.conversation.id];
+    const node = conv.nodes[this.conversation.node];
+    // Presentation layer only shows condition-visible choices; remap the
+    // display index to the underlying data index deterministically.
+    const visible = (node.choices || []).filter((c) => this._conditionsMet(this._scene(), c));
+    const choice = visible[choiceIndex];
+    if (!choice) return null;
+    if (choice.goto && conv.nodes[choice.goto]) {
+      this.conversation.node = choice.goto;
+      return this._conversationStep();
+    }
+    const endedId = this.conversation.id;
+    this.conversation = null;
+    this.bus.emit(GameEvents.CONVERSATION_ENDED, { convId: endedId });
+    return { ended: true, text: 'The conversation ends with mutual Finnish silence.' };
+  }
+
+  // Escape hatch: gracefully abandon a conversation (docs/12 keyboard-first).
+  endConversation() {
+    if (!this.conversation) return false;
+    const endedId = this.conversation.id;
+    this.conversation = null;
+    this.say('You bow politely and exit the conversation. Small talk: defeated.');
+    this.bus.emit(GameEvents.CONVERSATION_ENDED, { convId: endedId });
+    return true;
+  }
+
+  _conversationStep() {
+    const conv = this.content.conversations[this.conversation.id];
+    const node = conv.nodes[this.conversation.node];
+    if (node.once && this.flags[`conv:${this.conversation.id}:${this.conversation.node}`]) {
+      // Replay path: skip repeat comedy, keep structure stable.
+      this.say('(They have said all they are going to say.)');
+      this.conversation = null;
+      return { ended: true, replayed: true };
+    }
+    this.bus.emit(GameEvents.CONVERSATION_NODE, { convId: this.conversation.id, nodeId: this.conversation.node });
+    for (const line of node.lines) {
+      if (isCriticalLine(line)) this.sayRaw(`${CRITICAL_LINE_MARKER}${line.speaker}: ${line.text}`);
+      else this.say(`${line.speaker}: ${line.text}`);
+    }
+    if (node.setFlag) this.setFlag(node.setFlag);
+    if (node.once) this.setFlag(`conv:${this.conversation.id}:${this.conversation.node}`);
+    if (Array.isArray(node.givesItem)) {
+      for (const g of node.givesItem) {
+        if (!this.flags[`dlg_given:${this.conversation.id}:${this.conversation.node}:${g.item}`]) {
+          this.player.addItem(g.item, g.count || 1);
+          this.setFlag(`dlg_given:${this.conversation.id}:${this.conversation.node}:${g.item}`);
+          this.say(`You pocket the ${this._itemName(g.item)}. They insist.`);
+        }
+      }
+    }
+    let choices = node.choices || [];
+    if (choices.length === 0) {
+      this.conversation = null;
+      return { text: '', choices: [], ended: true };
+    }
+    // Filter choices by conditions (flags / inventory), then hide single-branch menus.
+    choices = choices.filter((c) => this._conditionsMet(this._scene(), c));
+    while (choices.length === 1 && choices[0].goto && conv.nodes[choices[0].goto]) {
+      const next = choices[0];
+      this.conversation.node = next.goto;
+      const step = this._conversationStep();
+      if (step.ended) return step;
+      return step;
+    }
+    if (choices.length === 0) {
+      this.conversation = null;
+      return { text: '', choices: [], ended: true };
+    }
+    return { text: node.prompt || 'You:', choices: choices.map((c) => ({ label: c.label })) };
   }
 
   // ---------- hammer events (docs/08: short, readable, deterministic) ----------
@@ -456,6 +570,36 @@ export class Engine {
       this.say('The cat has left to contemplate Finland elsewhere.');
       return;
     }
+    // docs/09 Phase 3: pack behavior. A cat may belong to a named pack; packs
+    // coordinate — triggering one member brings the whole pack, but the pack
+    // shares ONE cooldown so players face a single "pipe-or-flight" decision.
+    const packId = obj.pack;
+    if (packId) {
+      const pack = this.content.packs?.[packId];
+      const members = this._scene().objects.filter((o) => o.pack === packId);
+      const leaderCd = this.hazardCooldowns[`pack:${packId}`] || 0;
+      if (this.clock.now() < leaderCd) {
+        this.say('The pack is grooming. They will see you later. Probably.');
+        return;
+      }
+      this.bus.emit(GameEvents.CAT_HAZARD_TRIGGERED, { hazardId: obj.id, pack: packId });
+      this.setFlag('met_cat_pack');
+      const dmg = obj.damage ?? this.content.tuning.cat.damage;
+      this.player.takeDamage(dmg, 'perkele-cat');
+      const cdSecs = obj.cooldownSeconds ?? this.content.tuning.cat.cooldownSeconds;
+      this.hazardCooldowns[obj.id] = this.clock.now() + cdSecs;
+      this.hazardCooldowns[`pack:${packId}`] = this.clock.now() + cdSecs;
+      for (const m of members) {
+        if (m !== obj) this.hazardCooldowns[m.id] = this.clock.now() + cdSecs;
+      }
+      this.pendingCatDodge = true;
+      const howl = pack?.howl || `PERKELE CAT attacks! -${dmg} health. It hisses "PERKELE" with feeling.`;
+      const reinforcements = members.length > 1
+        ? `\n${members.length - 1} more cat(s) arrive at tactical speed. The pack has opinions about you.`
+        : '';
+      this.say(`${howl}${reinforcements}`);
+      return;
+    }
     this.bus.emit(GameEvents.CAT_HAZARD_TRIGGERED, { hazardId: obj.id });
     const dmg = obj.damage ?? this.content.tuning.cat.damage;
     this.player.takeDamage(dmg, 'perkele-cat');
@@ -468,7 +612,11 @@ export class Engine {
 
   seppoEncounter(obj) {
     if (this.flags['seppo_done']) {
-      this.say('Seppo has already performed his one miracle today.');
+      // Phase 3 personality pass: the rare repeat-encounter gag (docs/22 —
+      // callbacks beat repetition). Deterministic via counter flag.
+      const n = (this.flags['seppo_gags'] || 0) % SEPPO_REPEAT_GAGS.length;
+      this.flags['seppo_gags'] = (this.flags['seppo_gags'] || 0) + 1;
+      this.say(SEPPO_REPEAT_GAGS[n]);
       return;
     }
     const needy =
@@ -534,6 +682,7 @@ export class Engine {
       this.puzzleRuntime = save.puzzleRuntime || {};
       this.won = !!save.won;
       this.gameOver = false;
+      this.conversation = null;
       this.pendingCatDodge = false;
       this.player.load(save.player, this.clock);
       this.enterScene(save.sceneId, save.playerPos);
