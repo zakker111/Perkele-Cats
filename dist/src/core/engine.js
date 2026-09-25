@@ -21,6 +21,16 @@ export class Engine {
     // back into the shared content module. Deep-clone so multiple engines /
     // test runs / hot-reload cannot corrupt each other's world data.
     this.content = structuredClone(content); // validated bundle: {scenes, items, npcs, puzzles, dialogue, tuning}
+    // docs/10 world-state memory: keep a pristine per-scene object registry so
+    // the live object list can be rebuilt on every scene entry (taken items
+    // stay taken; nothing is ever duplicated or lost). The live arrays are
+    // cloned too, so `scene.objects = scene.objects.filter(...)` can never
+    // mutate the caller's bundle (BUG-6 contract: content stays pristine).
+    this._pristine = {};
+    for (const s of this.content.scenes) {
+      this._pristine[s.id] = s.objects.map((o) => structuredClone(o));
+      s.objects = this._pristine[s.id].map((o) => ({ ...o }));
+    }
     this.bus = new EventBus();
     this.clock = new Clock();
     this.player = new Player(this.bus, content.tuning);
@@ -72,6 +82,13 @@ export class Engine {
   enterScene(sceneId, spawn) {
     const scene = this._scene(sceneId);
     if (!scene) throw new Error(`Unknown scene id: ${sceneId}`);
+    // docs/10 world-state memory: rebuild the live object list from pristine
+    // content each entry, then re-apply persisted removals (taken items stay
+    // taken across scene changes AND save/load). Content is never mutated.
+    if (this._pristine && this._pristine[sceneId]) {
+      scene.objects = this._pristine[sceneId]
+        .filter((o) => !this.flags[`taken:${o.id}`]);
+    }
     this.sceneId = sceneId;
     this.playerPos = { ...spawn };
     this.walkTarget = null;
@@ -179,11 +196,14 @@ export class Engine {
           reducedDistortion: this.reducedDistortion,
         }) || 'You see nothing useful but feel richer spiritually.');
         break;
-      case 'take':
-        this.player.addItem(obj.givesItem);
+      case 'take': {
+        if (this.flags[`taken:${obj.id}`]) break; // already collected (persisted)
+        this.player.addItem(obj.givesItem); // addItem is void on purpose — do not gate on it
         this.say(`Picked up: ${this._itemName(obj.givesItem)}.`);
-        scene.objects = scene.objects.filter((o) => o !== obj); // consumed from scene
+        this.setFlag(`taken:${obj.id}`); // docs/10: taken items stay taken across saves
+        scene.objects = scene.objects.filter((o) => o !== obj); // consumed from live scene
         break;
+      }
       case 'give': {
         if (this.player.hasItem(obj.requiresItem)) {
           this.player.removeItem(obj.requiresItem);
@@ -665,7 +685,7 @@ export class Engine {
       flags: this.flags,
       messages: [],
       player: this.player.serialize(),
-      hazardCooldowns: {},
+      hazardCooldowns: { ...this.hazardCooldowns }, // docs/16: hazards stay dangerous across saves
       puzzleRuntime: this.puzzleRuntime,
       won: this.won,
     };
@@ -680,6 +700,15 @@ export class Engine {
     try {
       this.flags = save.flags || {};
       this.puzzleRuntime = save.puzzleRuntime || {};
+      // Cooldowns are absolute clock times; rebase them onto the fresh session
+      // so the longest remaining window keeps its length (docs/16 determinism).
+      const savedCd = save.hazardCooldowns || {};
+      const now = this.clock.now();
+      const remaining = Object.values(savedCd).reduce((m, t) => Math.max(m, t - now), 0);
+      this.hazardCooldowns = {};
+      for (const [k, t] of Object.entries(savedCd)) {
+        this.hazardCooldowns[k] = Math.max(now, t - now > 0 ? now + remaining : t);
+      }
       this.won = !!save.won;
       this.gameOver = false;
       this.conversation = null;
