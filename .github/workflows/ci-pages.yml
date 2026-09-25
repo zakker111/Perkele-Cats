@@ -1,0 +1,60 @@
+name: CI + GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # docs/19 release gate: validate content, run tests, build — deploy only if all pass
+      - name: Validate content (docs/15)
+        run: node tools/validate-content.mjs
+
+      - name: Unit & integration tests (AGENTS.md §7)
+        run: node --test tests/
+
+      - name: Deterministic Pages build (relative subpath-safe)
+        run: node scripts/build-pages.mjs
+
+      - name: Smoke test the built site boots in a real browser
+        run: |
+          sudo apt-get update && sudo apt-get install -y chromium-browser || sudo apt-get install -y chromium
+          npm install -g puppeteer-core@22
+          node tests/smoke-boot.test.mjs
+        env:
+          CHROME_BIN_PATH: /usr/bin/chromium-browser
+
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          path: .
+
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    needs: build-test
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
