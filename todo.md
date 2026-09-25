@@ -47,7 +47,7 @@ Docs: 01, 02, 14, 15, 16, 18, 25
 
 ---
 
-## PHASE 2 — Signature Items Polish (v0.2.0) ⬅ START HERE
+## PHASE 2 — Signature Items Polish (v0.2.0) ⬅ CURRENT PHASE
 Docs: 03, 04, 05, 06, 11, 22
 The mechanics exist; this phase makes them *feel* like the game's identity.
 
