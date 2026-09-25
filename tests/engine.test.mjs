@@ -8,6 +8,8 @@ import { Engine } from '../game/src/core/engine.js';
 import { EquipmentState, BeerState, MAX_SHOTS } from '../game/src/core/player.js';
 import { validateContent } from '../game/src/core/content-validation.js';
 import { content as realContent } from '../game/content/bundle.js';
+import { filterDrunkText } from '../game/src/core/beer-logic.js';
+import { GameEvents } from '../game/src/core/events.js';
 
 function makeEngine() {
   // deep clone so scene mutations (taking items) don't leak between tests
@@ -320,4 +322,179 @@ test('determinism: identical action sequences produce identical state', () => {
     return JSON.stringify(e.player.serialize()) + '|' + String(e.clock.now());
   };
   assert.equal(run(), run());
+});
+
+// ================= PHASE 2 — Signature Items Polish (v0.2.0) =================
+
+test('P2: comedic failure audit — every wrong action earns a distinct joke line', () => {
+  const e = makeEngine();
+  giveStarterKit(e);
+  // 1) drink with pipe equipped -> explains swap, never silent
+  e.equipPipe();
+  const r1 = e.player.canDrinkBeer();
+  assert.equal(r1.ok, false);
+  assert.match(r1.reason, /\[X\]|swap/i);
+  // 2) empty pipe fire after six shots
+  for (let i = 0; i < MAX_SHOTS; i++) e.player.firePipe();
+  const r2 = e.player.canFirePipe();
+  assert.equal(r2.ok, false);
+  assert.match(r2.reason, /reload|\[R\]/i);
+  // 3) soap gag carries the fiction disclaimer
+  e.player.addItem('item_soap');
+  const before = e.messages.length;
+  e.eatFood('item_soap');
+  assert.match(e.messages.slice(before).join('\n'), /do NOT eat real soap/i);
+  // 4) swap with nothing relevant in hands is explained, not ignored
+  const e2 = makeEngine();
+  const r4 = e2.swapEquipment();
+  assert.equal(r4.ok, false);
+  assert.match(e2.messages.at(-1), /pipe and a beer/i);
+});
+
+test('P2: recurring jokes rotate deterministically and repeat after the cycle', () => {
+  const e = makeEngine();
+  giveStarterKit(e);
+  e.equipPipe();
+  const seen = [];
+  for (let i = 0; i < 7; i++) { e.drinkBeer(); seen.push(e.messages.at(-1)); }
+  // three rotating variants, so consecutive failures differ...
+  assert.notEqual(seen[0], seen[1]);
+  assert.notEqual(seen[1], seen[2]);
+  // ...and the cycle repeats deterministically (docs/22 variations)
+  assert.equal(seen[3], seen[0]);
+  // same engine replayed from scratch yields identical lines
+  const e2 = makeEngine();
+  giveStarterKit(e2);
+  e2.equipPipe();
+  for (let i = 0; i < 7; i++) e2.drinkBeer();
+  assert.deepEqual(e2.messages.filter((m) => /Pipe Council|six shots of authority|free-ish hand/.test(m)),
+    e.messages.filter((m) => /Pipe Council|six shots of authority|free-ish hand/.test(m)));
+});
+
+test('P2: pipe targeting — hammer resolves, cats dodge with gags, sky misses are gags (docs/06)', () => {
+  const e = makeEngine();
+  giveStarterKit(e);
+  e.equipPipe();
+  // no target engaged: blast into the sky gag, shot still counted
+  const msgCount = e.messages.length;
+  const res = e.firePipe();
+  assert.equal(res.ok, true);
+  assert.equal(res.shotsLeft, MAX_SHOTS - 1);
+  assert.match(e.messages.at(-1), /sky|moose|aim/i);
+  // hammer event targeted: pipe resolves it (forest scene has the hazards)
+  e.enterScene('scene_forest', { x: 1, y: 4 });
+  e.clickObject('obj_hammer_zone');
+  assert.ok(e.hammer);
+  e.firePipe();
+  assert.equal(e.hammer, null);
+  // cat engaged: valid target but dodges (comedy, not solution)
+  e.clickObject('obj_cat');
+  assert.equal(e.pendingCatDodge, true);
+  const hpAfterHit = e.player.health;
+  e.firePipe();
+  assert.equal(e.player.health, hpAfterHit, 'dodged shot must not damage');
+  assert.match(e.messages.at(-1), /cat|leaf|grace|respect/i);
+  assert.equal(e.pendingCatDodge, false);
+});
+
+test('P2: multi-beer escalation deepens without breaking the state machine (docs/05)', () => {
+  const e = makeEngine();
+  giveStarterKit(e);
+  e.player.addItem('item_beer_bottle', 5); // three full sessions worth
+  e.equipBeer();
+  // beer #1 full chain
+  e.drinkBeer();
+  assert.equal(e.player.beerLevel, 1);
+  e.clock.advance(20);
+  assert.equal(e.player.beerState, BeerState.SOBER);
+  assert.equal(e.player.beerLevel, 0, 'level resets when sober');
+  // beer #2 then #3 back-to-back during RECOVERING escalates cleanly
+  e.drinkBeer(); e.clock.advance(3 + 8); // now RECOVERING
+  assert.equal(e.player.beerState, BeerState.RECOVERING);
+  const r2 = e.drinkBeer();
+  assert.equal(r2.level, 2);
+  e.clock.advance(3 + 8);
+  const r3 = e.drinkBeer();
+  assert.equal(r3.level, 3);
+  e.clock.advance(3);
+  assert.equal(e.player.beerState, BeerState.SURREAL);
+  // escalation changes perception vocabulary: "friend" reads deeper at level 3
+  const l3 = filterDrunkText('She is my friend.', BeerState.SURREAL, { escalationLevel: 3 });
+  const l1 = filterDrunkText('She is my friend.', BeerState.SURREAL, { escalationLevel: 1 });
+  assert.match(l1, /unpaid life consultant/);
+  assert.match(l3, /temporary permanent friend/);
+  // accessibility parity: reduced distortion disables everything
+  assert.equal(filterDrunkText('She is my friend.', BeerState.SURREAL, { reducedDistortion: true, escalationLevel: 3 }), 'She is my friend.');
+});
+
+test('P2: surreal NPC suspicion keeps puzzle-critical text intact (docs/05/17)', () => {
+  const e = makeEngine();
+  giveStarterKit(e);
+  e.equipBeer();
+  e.drinkBeer();
+  e.clock.advance(3); // SURREAL
+  assert.equal(e.player.beerState, BeerState.SURREAL);
+  const before = e.messages.length;
+  e.dialogue('dlg_maija_intro');
+  const heard = e.messages.slice(before).join('\n');
+  // paranoia aside appended...
+  assert.match(heard, /FURNITURE DOES NOT BREATHE/);
+  // ...but the critical instruction survives (swap law is readable)
+  assert.match(heard, /[Nn]ever both at once/);
+});
+
+test('P2: swap feedback — EQUIPMENT_SWAPPED fires only on successful swaps (docs/12)', () => {
+  const e = makeEngine();
+  let events = [];
+  e.bus.on(GameEvents.EQUIPMENT_SWAPPED, (p) => events.push(p));
+  const bad = e.swapEquipment(); // nothing held
+  assert.equal(bad.ok, false);
+  assert.equal(events.length, 0);
+  giveStarterKit(e);
+  e.equipPipe();
+  const ok = e.swapEquipment();
+  assert.equal(ok.ok, true);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].to, EquipmentState.BEER);
+  assert.match(e.messages.at(-1), /Swapped PIPE → BEER/);
+});
+
+test('P2: inspect coverage — every item has flavor text; surreal alternates exist (docs/15)', () => {
+  for (const [id, def] of Object.entries(realContent.items)) {
+    assert.ok(def.inspectText && def.inspectText.length > 10, `missing inspectText: ${id}`);
+  }
+  // props gained surreal alternate inspection lines
+  const yard = realContent.scenes.find((s) => s.id === 'scene_moi');
+  const sign = yard.objects.find((o) => o.id === 'obj_sign');
+  assert.ok(sign.surrealText, 'sign needs a surreal variant');
+  // and the engine actually uses them while SURREAL
+  const e = makeEngine();
+  giveStarterKit(e);
+  e.equipBeer();
+  e.drinkBeer();
+  e.clock.advance(3);
+  const before = e.messages.length;
+  e.clickObject('obj_sign');
+  assert.match(e.messages.at(-1), /ANARCHY IS TEMPORARY/, 'surreal inspect line should show');
+  // sober shows the clean line
+  e.clock.advance(20);
+  const b2 = e.messages.length;
+  e.clickObject('obj_sign');
+  assert.match(e.messages.at(-1), /click glowing things/i);
+});
+
+test('P2: gag rotation counters persist through save/load (no reset exploit)', () => {
+  const e = makeEngine();
+  giveStarterKit(e);
+  e.equipPipe();
+  e.drinkBeer(); // gag #1
+  const first = e.messages.at(-1);
+  const save = JSON.parse(JSON.stringify(e.serialize()));
+  const e2 = makeEngine();
+  assert.ok(e2.load(save));
+  e2.player.addItem('item_pipe');
+  e2.player.addItem('item_beer_bottle', 2);
+  e2.equipPipe();
+  e2.drinkBeer(); // gag #2 continues the rotation, not restarts it
+  assert.notEqual(e2.messages.at(-1), first);
 });

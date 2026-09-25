@@ -5,7 +5,7 @@
 import { EventBus, GameEvents } from './events.js';
 import { Clock } from './clock.js';
 import { Player, EquipmentState, BeerState, MAX_SHOTS } from './player.js';
-import { filterDrunkText } from './beer-logic.js';
+import { filterDrunkText, suspiciousNpcLine, surrealInspect } from './beer-logic.js';
 
 export class Engine {
   constructor(content) {
@@ -20,6 +20,7 @@ export class Engine {
     this.flags = {}; // progression flags
     this.messages = []; // log for UI
     this.hammer = null; // active hammer event runtime state
+    this.pendingCatDodge = false; // docs/06: cat engaged as pipe target (dodges)
     this.hazardCooldowns = {}; // hazardId -> readyAt (seconds)
     this.puzzleRuntime = {}; // puzzleId -> {step}
     this.gameOver = false;
@@ -30,7 +31,13 @@ export class Engine {
       // docs/05: during TIPSY/SURREAL the player perceives dialogue through
       // the drunk filter. engine.messages stores the FILTERED perception —
       // authoritative clean source stays in content data (docs/15).
-      const perceived = filterDrunkText(text, this.player.beerState, {
+      let perceived = filterDrunkText(text, this.player.beerState, {
+        reducedDistortion: this.reducedDistortion,
+        escalationLevel: this.player.beerLevel,
+      });
+      // docs/05 silly NPC reactions: friendly NPCs read as suspicious while SURREAL.
+      perceived = suspiciousNpcLine(perceived, {
+        beerState: this.player.beerState,
         reducedDistortion: this.reducedDistortion,
       });
       this.messages.push(perceived);
@@ -67,6 +74,12 @@ export class Engine {
 
   say(text) {
     this.bus.emit(GameEvents.MESSAGE, { text });
+  }
+
+  /** Deterministic rotating joke line (docs/22 recurring jokes, no Math.random). */
+  _gagLine(key, lines) {
+    const n = (this.player.gagCounters[key] = (this.player.gagCounters[key] || 0) + 1);
+    return lines[(n - 1) % lines.length];
   }
 
   setFlag(name, value = true) {
@@ -141,7 +154,10 @@ export class Engine {
 
     switch (obj.action) {
       case 'inspect':
-        this.say(obj.text || 'You see nothing useful but feel richer spiritually.');
+        this.say(surrealInspect(obj, {
+          beerState: this.player.beerState,
+          reducedDistortion: this.reducedDistortion,
+        }) || 'You see nothing useful but feel richer spiritually.');
         break;
       case 'take':
         this.player.addItem(obj.givesItem);
@@ -178,7 +194,11 @@ export class Engine {
         this.seppoEncounter(obj);
         break;
       default:
-        this.say('Nothing happens. Comedy timing requires a second attempt.');
+        this.say(this._gagLine('no-action', [
+          'Nothing happens. Comedy timing requires a second attempt.',
+          'Nothing happens, except a small bird quietly reconsidering your life choices.',
+          'You interact with enthusiasm. The universe files it under "pending".',
+        ]));
     }
   }
 
@@ -236,15 +256,31 @@ export class Engine {
     return this._equipItem(this.content.tuning.player.beerItemId, 'Beer equipped. A beverage with narrative consequences.');
   }
   swapEquipment() {
-    return this._equipResult(
-      this.player.swapEquipment(),
-      `Swapped to ${this.player.equipment.toLowerCase()}.`,
-    );
+    const from = this.player.equipment;
+    const res = this.player.swapEquipment();
+    if (res.ok) {
+      const to = this.player.equipment.toLowerCase();
+      const flavor = to === 'beer'
+        ? `⚡ Swapped PIPE → BEER. The bottle hums a small victory song.`
+        : `⚡ Swapped BEER → PIPE. Six opinions, freshly reloaded in spirit.`;
+      this.say(flavor);
+      void from;
+    } else {
+      this.say(res.reason);
+    }
+    return res;
   }
   _equipResult(res, okText) {
     if (res.ok) this.say(okText);
     else this.say(res.reason);
     return res;
+  }
+
+  /** Is there a pipe-valid target currently engaged? (docs/06 targeting) */
+  _pipeTarget() {
+    if (this.hammer && this.hammer.resolvableByPipe) return 'hammer';
+    if (this.pendingCatDodge) return 'cat';
+    return null;
   }
 
   firePipe(targetLabel) {
@@ -253,13 +289,24 @@ export class Engine {
       this.say(res.reason);
       return res;
     }
-    // Pipe combat is short & secondary (docs/06). Skeleton: resolves scripted hazards.
-    if (this.hammer && this.hammer.resolvableByPipe) {
+    // Pipe combat is short & secondary (docs/06). Targeted: firing at nothing
+    // is a "blast into the sky" gag, not a free solution to every problem.
+    const target = targetLabel || this._pipeTarget();
+    if (target === 'hammer' && this.hammer && this.hammer.resolvableByPipe) {
       this.resolveHammerEvent(true, 'pipe');
-    } else if (targetLabel === 'cat') {
-      this.say('The Perkele cat dodges with insulting grace and hisses judgment.');
+    } else if (target === 'cat') {
+      this.pendingCatDodge = false;
+      this.say(this._gagLine('cat-dodge', [
+        'The Perkele cat dodges with insulting grace and hisses judgment.',
+        'The cat does not even move. The shot simply misses, out of respect.',
+        'Direct hit on a leaf. The cat counts it as emotional damage inflicted on nature.',
+      ]));
     } else {
-      this.say(`BANG! ${res.shotsLeft} shot${res.shotsLeft === 1 ? '' : 's'} remain. A distant moose is unimpressed.`);
+      this.say(this._gagLine('sky-gag', [
+        `BANG! ${res.shotsLeft} shot${res.shotsLeft === 1 ? '' : 's'} remain. You blasted into the sky. A cloud apologizes.`,
+        `BANG! ${res.shotsLeft} shot${res.shotsLeft === 1 ? '' : 's'} remain. Somewhere a moose is mildly inconvenienced.`,
+        `BANG! ${res.shotsLeft} shot${res.shotsLeft === 1 ? '' : 's'} remain. Aim exists for a reason, you know.`,
+      ]));
     }
     return res;
   }
@@ -275,8 +322,18 @@ export class Engine {
 
   drinkBeer() {
     const res = this.player.drinkBeer(this.clock);
-    if (!res.ok) this.say(res.reason);
-    else this.say('You drink the beer. The colors start filing complaints with management.');
+    if (!res.ok) {
+      this.say(res.reason);
+      return res;
+    }
+    const level = res.level || 1;
+    if (level >= 3) {
+      this.say(`You drink beer #${level}. The concept of 'drunk' renames itself to 'enlightened'.`);
+    } else if (level === 2) {
+      this.say('You drink another beer. The trees begin submitting their opinions formally.');
+    } else {
+      this.say('You drink the beer. The colors start filing complaints with management.');
+    }
     return res;
   }
 
@@ -387,6 +444,7 @@ export class Engine {
     const dmg = obj.damage ?? this.content.tuning.cat.damage;
     this.player.takeDamage(dmg, 'perkele-cat');
     this.hazardCooldowns[obj.id] = this.clock.now() + (obj.cooldownSeconds ?? this.content.tuning.cat.cooldownSeconds);
+    this.pendingCatDodge = true; // docs/06: cat is now a valid pipe target (it will dodge — comedy, not solution)
     this.say(obj.hitText || `PERKELE CAT attacks! -${dmg} health. It regrets nothing.`);
   }
 
@@ -460,6 +518,7 @@ export class Engine {
       this.puzzleRuntime = save.puzzleRuntime || {};
       this.won = !!save.won;
       this.gameOver = false;
+      this.pendingCatDodge = false;
       this.player.load(save.player, this.clock);
       this.enterScene(save.sceneId, save.playerPos);
       this.bus.emit(GameEvents.LOADED, {});

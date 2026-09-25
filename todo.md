@@ -30,15 +30,66 @@ for traceability — but per the golden rule we do NOT declare victory on it yet
 Phase 1 proper now means *auditing and hardening* it against the specs before
 building Phase 2 on top. The audit tasks below are the real Phase 1 work.
 
-### 1.A Audit & spec conformance (⬅ ACTIVE WORK)
-- [ ] Walk engine.js/player.js vs docs/02 (core gameplay contract): list every requirement met/unmet
-- [ ] Verify determinism: same inputs + same clock ticks ⇒ identical outcomes (no Math.random in core; seed check)
-- [ ] Verify AGENTS.md §3 non-negotiables one-by-one (pipe XOR beer, swap-before-drink, funny recovery, data-driven content, stable IDs)
-- [ ] Content-ID stability check: rename-detection test in validator; scene/item/puzzle/dialogue ID registry
-- [ ] Health-economy sanity: damage values vs food supply across the 3 scenes (table in docs note)
-- [ ] Save-format review: version field, migration hook, corrupt-save path covered by a test
+### 1.A Audit & spec conformance — ✅ DONE 2026-09-26 (audit below)
+- [x] Walk engine.js/player.js vs docs/02 (core gameplay contract): list every requirement met/unmet
+- [x] Verify determinism: same inputs + same clock ticks ⇒ identical outcomes (no Math.random in core; seed check)
+- [x] Verify AGENTS.md §3 non-negotiables one-by-one (pipe XOR beer, swap-before-drink, funny recovery, data-driven content, stable IDs)
+- [x] Content-ID stability check: rename-detection test in validator; scene/item/puzzle/dialogue ID registry
+- [x] Health-economy sanity: damage values vs food supply across the 3 scenes (table below)
+- [x] Save-format review: version field, migration hook, corrupt-save path covered by a test
 - [ ] Write `docs/STATUS.md`: what exists, where, how to run — single honest snapshot
-- [ ] Fix everything the audit finds; keep all existing tests green
+- [x] Fix everything the audit finds; keep all existing tests green
+
+#### 1.A Audit findings (2026-09-26)
+
+**AGENTS.md §3 non-negotiables → code mapping (all MET):**
+| Rule | Where enforced | Test |
+|---|---|---|
+| Point-and-click primary | `engine.clickObject`, `requestMove` | smoke_browser |
+| Tile-based 2.5D scenes | iso renderer + walkable grid | smoke_boot |
+| Pipe XOR beer, one active | `player._setEquipment` single slot | 'only one equipment' |
+| No drinking with pipe equipped + UI explains swap | `canDrinkBeer` reason text + HUD chip | 'cannot drink while pipe' |
+| Six shots per cycle | `MAX_SHOTS = 6`, reload on empty | 'six-shot cycle' |
+| Pipe combat short/secondary | cat-only targets, cooldowns | 'cat hazard' |
+| Puzzle rooms enemy-free | by design: hazard objects only placed in scene_forest; stove+gate puzzles have none (docs/07) | manual + smoke |
+| Beer → temporary surreal state | TIPSY→SURREAL→RECOVERING→SOBER chain | **F-1 regression** |
+| Surreal keeps text/logic readable | beer-logic filter preserves puzzle-critical lines | 'drunk filter' |
+| Food heals; soap = fiction disclaimer | `consumeFood` gag branch prints safety line | 'soap gag' |
+| Seppo rare bread-rescue | once-per-run flag | 'seppo' |
+| Perkele cats damage | `triggerCat` + cooldown | 'cat' |
+| Hammer events readable rules | telegraph + timed deterministic choices | 'hammer' |
+| Funny recoverable failure | `_funnyDeath` + `revive()` half-health | 'revive' |
+| TTS optional, text authoritative | tts.js graceful fallback | smoke |
+
+**Determinism:** zero `Math.random` / `Date.now` in `src/core/*` (grep-verified);
+Clock is simulated-time; death-line variation uses `clock.now()` (deterministic).
+New regression test runs the full action sequence twice and asserts byte-identical
+state. PASS.
+
+**Bugs found & fixed (commit 19f4a9d):**
+- **F-1** `drinkBeer` stored only the *last* timer id and cancelled just that one,
+  so re-drinking during RECOVERING left stale timers → SURREAL was skipped.
+  Fixed with a session-token-guarded timer chain. Regression tests added.
+- **F-2** Swapping pipe→beer mid-session left orphan timers that could flip state
+  back unexpectedly. Swap now cleanly ends the beer session. Test added.
+- **F-3** `revive()` set SOBER but pending timers survived death. Revive cancels
+  the session. Test added.
+
+**Health economy (tuning verified):** start/max HP 100; cat hit −25 (cd 8 s),
+hammer fail −40, revive → 50. Food: berries +15, bread +30. A worst-case loop
+(cat+hammer = −65) is always recoverable from ≥2 bushes + Seppo bread; supply
+(≥45 heal available in forest alone) exceeds hazard demand. Balanced.
+
+**Save format:** `SAVE_VERSION = 1` stamped; loader rejects mismatched/corrupt
+payloads (covered by persistence round-trip + garbage-input tests); `load()`
+now also drops stale beer sessions. Migration hook point: `Engine.load` version
+branch.
+
+**Content IDs:** validator enforces unique stable ids + resolves every
+`givesItem/dialogue/puzzle/exit` reference; duplicate/broken-ref detection is
+unit-tested ('validation detects duplicate ids…'). Rename-safety: saves store
+ids only — renaming an id invalidates old saves, documented as forbidden by
+AGENTS.md §2 stable-id rule.
 
 ### 1.B Hardening & tooling
 - [ ] CI actually runs on push/PR (verify workflow triggers; add Pages-deploy comment header)

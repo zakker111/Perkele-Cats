@@ -90,11 +90,31 @@ body.tipsy main { animation: tipsy-tilt 4s ease-in-out infinite; }
   0%, 100% { transform: none; }
   50% { transform: translateX(2px); }
 }
+/* Phase 2 multi-beer escalation (docs/05): deeper beer = stronger layers */
+canvas#scene.surreal-mid {
+  filter: hue-rotate(320deg) saturate(2.2) contrast(1.25) blur(0.6px);
+  animation-duration: 2.2s;
+}
+canvas#scene.surreal-deep {
+  filter: hue-rotate(200deg) saturate(2.8) contrast(1.35) blur(0.9px) invert(0.06);
+  animation-duration: 1.5s;
+}
+/* Swap feedback flourish (docs/12) */
+.chip.swap-flash { animation: swap-pop 0.5s ease-out; }
+@keyframes swap-pop {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 226, 122, 0.9); }
+  40% { transform: scale(1.15) rotate(-2deg); }
+  100% { transform: scale(1); box-shadow: 0 0 0 14px rgba(255, 226, 122, 0); }
+}
 /* Accessibility: reduced-distortion mode (docs/17) */
-body.reduced-distortion canvas#scene.surreal { animation: none; filter: saturate(1.4); }
+body.reduced-distortion canvas#scene.surreal,
+body.reduced-distortion canvas#scene.surreal-mid,
+body.reduced-distortion canvas#scene.surreal-deep { animation: none; filter: saturate(1.4); }
+body.reduced-distortion .chip.swap-flash { animation: none; }
 body.reduced-distortion main { animation: none; }
 @media (prefers-reduced-motion: reduce) {
-  canvas#scene.surreal, body.tipsy main { animation: none; }
+  canvas#scene.surreal, canvas#scene.surreal-mid, canvas#scene.surreal-deep,
+  body.tipsy main, .chip.swap-flash { animation: none; }
 }
 
 #sidebar {
