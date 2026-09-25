@@ -1,0 +1,16 @@
+{
+  "name": "perkele-adventure",
+  "version": "0.1.0",
+  "description": "Browser-based 2.5D point-and-click comedy adventure (skeleton build). Original work per /docs specification.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "python3 -m http.server 8080 --directory .",
+    "validate-content": "node ../tools/validate-content.mjs",
+    "test": "node --test ../tests/",
+    "smoke": "node ../tests/smoke-boot.test.mjs",
+    "build": "node ../scripts/build-pages.mjs",
+    "serve-dist": "python3 -m http.server 9000 --directory ../dist"
+  },
+  "license": "UNLICENSED"
+}

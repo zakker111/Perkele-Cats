@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Perkele Adventure — Episode One (Skeleton 0.1.0)</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header id="topbar">
+    <h1>PERKELE ADVENTURE</h1>
+    <span id="scene-name" aria-live="polite">…</span>
+    <span id="health-bar" class="chip" role="status" aria-label="health">HP</span>
+    <span id="equip-indicator" class="chip">Hands: empty</span>
+    <span id="shots" class="chip"></span>
+    <span id="beer-badge" class="chip chip-beer" role="status"></span>
+    <span class="spacer"></span>
+    <button id="btn-tts">TTS: OFF</button>
+    <button id="btn-reduced">Reduced distortion: OFF</button>
+    <button id="btn-save" title="Save (S)">💾 Save</button>
+    <button id="btn-load" title="Load (L)">📂 Load</button>
+    <button id="btn-clear" title="Delete save">🗑</button>
+  </header>
+
+  <main>
+    <canvas id="scene" width="960" height="540" aria-label="Game scene. Click tiles to walk, click glowing objects to interact."></canvas>
+
+    <aside id="sidebar">
+      <h2>Inventory <small>(click to use/equip)</small></h2>
+      <div id="inventory"></div>
+      <h2>Message log</h2>
+      <div id="log" aria-live="polite"></div>
+      <details>
+        <summary>Controls</summary>
+        <ul>
+          <li><b>Click tile</b> — walk there</li>
+          <li><b>Click object</b> — interact</li>
+          <li><b>E</b> — equip pipe/beer · <b>X</b> — swap</li>
+          <li><b>F</b> — fire pipe (6 shots) · <b>R</b> — reload</li>
+          <li><b>D</b> — drink beer (must be equipped, not pipe!)</li>
+          <li><b>1/2/3</b> — hammer-event choices · <b>S/L</b> — save/load</li>
+        </ul>
+      </details>
+    </aside>
+
+    <div id="hammer-panel" class="panel hidden" role="alert"></div>
+    <div id="puzzle-panel" class="panel hidden"></div>
+    <div id="overlay" class="hidden"></div>
+  </main>
+
+  <footer>
+    v0.1.0 skeleton · fan-original comedy adventure · docs in <code>/docs</code> · deploy via GitHub Pages
+  </footer>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
