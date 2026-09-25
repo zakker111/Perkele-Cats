@@ -129,30 +129,31 @@ remaining: docs/24 housekeeping (CHANGELOG + v0.2.0 tag).
 
 ---
 
-## PHASE 3 — Danger & Characters Expansion (v0.3.0)
+## PHASE 3 — Danger & Characters Expansion (v0.3.0) ✅ COMPLETE (verified in code 2026-09-26)
 Docs: 08, 09, 22
 
-- [ ] Cat pack behavior: 2–3 cats coordinate, forcing pipe-or-flight decisions — docs/09
-- [ ] More hammer variants across scenes (different NPCs, telegraphs, option sets) — docs/08
-- [ ] Data-driven dialogue trees via `npc-template.md` format (branch by flags/inventory)
-- [ ] Seppo personality pass: more deadpan lines, rare repeat-encounter gag
-- [ ] Recovery tuning: every hazard ≤2 s restart, health economy balanced to food supply
-- [ ] Encounter resolution matrix tests (cat × equipment × health states)
-- [ ] Tag `v0.3.0`
+- [x] Cat pack behavior: 2–3 cats coordinate, forcing pipe-or-flight decisions — docs/09 (`engine.js` `_triggerCat` pack logic: leader cooldown `pack:<id>`, member bring-out, flight-vs-pipe choices)
+- [x] More hammer variants across scenes (different NPCs, telegraphs, option sets) — docs/08 (`bundle.js`: Tarmo + hammer NPC scene_forest, second hammer event in village; 11 hammer references validated)
+- [x] Data-driven dialogue trees via `npc-template.md` format (branch by flags/inventory) — `content.dialogue` + `conversations.conv_maija` / `conv_tarmo`; condition-gated choices with display-index remap fix
+- [x] Seppo personality pass: more deadpan lines, rare repeat-encounter gag — docs/08 (bread-rescue once-per-run flag + deadpan line set)
+- [x] Recovery tuning: every hazard ≤2 s restart, health economy balanced to food supply — Phase 1.A audit table (berries/bread vs cat/hammer damage)
+- [x] Encounter resolution matrix tests (cat × equipment × health states) — `tests/engine.test.mjs` hazard/cat/hammer cases + `tests/dialogue-ui.test.mjs` conditional-choice tests (42/42 green)
+- [ ] Tag `v0.3.0` ← **blocked on housekeeping only**: repo has no releases tagged yet (needs `v0.1.0`/`v0.2.0` first; see HOUSEKEEPING)
 
-**Exit criteria:** all three hazard types demonstrable with comedy-first, recoverable outcomes.
+**Exit criteria:** all three hazard types demonstrable with comedy-first, recoverable outcomes. ✅ MET (cats, hammer events, puzzle-hazard separation all tested).
 
 ---
 
-## PHASE 4 — Full Adventure Slice (v0.4.0)
+## PHASE 4 — Full Adventure Slice (v0.4.0) ⬅ ACTIVE
 Docs: 07, 10, 23
 
-- [ ] Expand to full Episode One room list (docs/10 world map, docs/23 beats 1–10 at real scale)
+- [ ] Expand to full Episode One room list (docs/10 world map, docs/23 beats 1–10 at real scale) — currently 3 scenes (moi / forest / village); sauna + lakeside rooms planned
+- [x] Persistent world flags + scene-state memory (taken items stay taken, solved puzzles stay solved) — DONE 2026-09-26 commit `a8dee00`: `_pristine` deep-clone registry, `taken:<objId>` flags re-applied on every `enterScene`, hazard cooldowns saved/rebased, BUG-6 infinite-loop fixed, 42/42 tests green
 - [ ] Multi-step puzzle chains across rooms using `puzzle-template.md` (key-item gating, stable IDs)
-- [ ] Persistent world flags + scene-state memory (taken items stay taken, solved puzzles stay solved)
 - [ ] Locked/hidden passages, safe-room puzzle density per docs/07
 - [ ] Beat-by-beat playthrough smoke test (automated assertions for each of the 10 progression beats)
 - [ ] Art pass: tile variety, props, per-scene lighting mood — docs/11
+- [ ] Audio pipeline completion — docs/13 (commit `e5d6d15` message claims WebAudio SFX/music/TTS queue but **code audit finds no audio module** in `game/src/core/` or `main.js`; needs implementation or honest revert)
 - [ ] Tag `v0.4.0`
 
 **Exit criteria:** continuous click-through intro→finale with no dead ends, no unearned puzzles.
@@ -219,18 +220,16 @@ Docs: 19, 24
 
 ---
 
-## CURRENT STATUS SUMMARY (updated 2026-09-26)
+## CURRENT STATUS SUMMARY (updated 2026-09-26, post code audit)
 
 | Phase | Status |
 |---|---|
 | 0 — Repo setup | ✅ complete |
 | 1 — Foundation v0.1.0 | ✅ 1.A audit DONE (F-1/F-2/F-3 fixed, determinism proven); 1.B hardening & 1.C housekeeping (docs move, CHANGELOG, tag) remain |
-| 2 — Signature polish v0.2.0 | ✅ implemented & tested (34/34 green) — awaiting 1.C-style housekeeping to tag v0.2.0 |
-| 3 — Danger & Characters v0.3.0 | ⬅ **NEXT ACTIVE PHASE** |
-| 4–9 | not started |
+| 2 — Signature polish v0.2.0 | ✅ implemented & tested — awaiting housekeeping to tag v0.2.0 |
+| 3 — Danger & Characters v0.3.0 | ✅ COMPLETE (verified in code: packs, hammer variants, dialogue trees + UI, matrix tests; 42/42 green) — tag blocked on housekeeping |
+| 4 — Full Adventure Slice v0.4.0 | ⬅ **ACTIVE** — world-state memory + BUG-6 fix done (`a8dee00`); remaining: room expansion (sauna/lakeside), puzzle chains, beat-by-beat smoke test, audio module (claimed in `e5d6d15` but absent from code — must implement or revert claim), art pass, tag v0.4.0 |
+| 5–9 | not started |
 
-**Next up: PHASE 3 — Danger & Characters Expansion (v0.3.0).**
-Cat packs, more hammer variants, data-driven dialogue trees, Seppo personality pass,
-encounter-matrix tests. The 1.B/1.C leftovers (CI smoke job, error overlay, docs/ move,
-CHANGELOG, tags v0.1.0/v0.2.0) are pure tooling/housekeeping and can be cleared in one
-pass any time — they gate tagging, not gameplay work.
+**Next up: PHASE 4 — Full Adventure Slice (v0.4.0).**
+Priority order: ① honest audio reconciliation (implement `game/src/core/audio.js` per docs/13 or drop the commit-message claim), ② sauna + lakeside rooms with multi-step puzzle chain, ③ automated 10-beat playthrough test, ④ then HOUSEKEEPING batch (docs→`docs/`, CHANGELOG, tags v0.1.0–v0.3.0, CI browser-smoke job).
