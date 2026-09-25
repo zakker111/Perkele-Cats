@@ -33,7 +33,9 @@ export class Player {
     this.shotsLeft = 0; // pipe shots in current loaded cycle
 
     this.beerState = BeerState.SOBER;
-    this.beerTimerId = null;
+    // One token identifying the current beer session: swapping timers into a
+    // single cancelable handle makes stale transitions impossible (audit F-1).
+    this.beerSession = 0;
   }
 
   // ---------- health ----------
@@ -106,8 +108,19 @@ export class Player {
     // Explicit visible swap between the two signature choices.
     const t = this.tuning.player;
     const next = this.equipment === EquipmentState.PIPE ? EquipmentState.BEER : EquipmentState.PIPE;
+    if (next === EquipmentState.BEER && this.beerState !== BeerState.SOBER) {
+      // Audit F-2: swapping to beer mid-session must not resurrect a dead
+      // timer chain — end the current beer session cleanly first.
+      this.cancelBeerSession();
+      this._setBeerState(BeerState.SOBER);
+    }
     const needItem = next === EquipmentState.PIPE ? t.pipeItemId : t.beerItemId;
     return this.equip(next, needItem);
+  }
+
+  /** Cancel all pending beer-state transitions for the current session. */
+  cancelBeerSession() {
+    this.beerSession += 1;
   }
 
   _setEquipment(target) {
@@ -173,13 +186,19 @@ export class Player {
 
     this._setBeerState(BeerState.TIPSY);
     const t = this.tuning.beer;
-    clock.cancel(this.beerTimerId);
-    this.beerTimerId = clock.after(t.tipsySeconds, () => this._setBeerState(BeerState.SURREAL));
-    this.beerTimerId = clock.after(t.tipsySeconds + t.surrealSeconds, () =>
-      this._setBeerState(BeerState.RECOVERING),
-    );
-    this.beerTimerId = clock.after(t.tipsySeconds + t.surrealSeconds + t.recoveringSeconds, () =>
-      this._setBeerState(BeerState.SOBER),
+    // Audit F-1: one session token guards the whole chain, so a re-drink or
+    // swap can never leave stale timers that skip states (SURREAL was
+    // previously skipped when drinking during RECOVERING).
+    this.cancelBeerSession();
+    const session = this.beerSession;
+    const guarded = (state) => () => {
+      if (this.beerSession === session) this._setBeerState(state);
+    };
+    clock.after(t.tipsySeconds, guarded(BeerState.SURREAL));
+    clock.after(t.tipsySeconds + t.surrealSeconds, guarded(BeerState.RECOVERING));
+    clock.after(
+      t.tipsySeconds + t.surrealSeconds + t.recoveringSeconds,
+      guarded(BeerState.SOBER),
     );
     return { ok: true };
   }
@@ -237,7 +256,7 @@ export class Player {
     this.equipment = data.equipment;
     this.shotsLeft = data.shotsLeft;
     this.beerState = BeerState.SOBER; // never save mid-surreal; sobriety on load
-    clock.cancel(this.beerTimerId);
+    this.cancelBeerSession(); // audit F-1: drop any pending transitions from before the save
     this.bus.emit(GameEvents.INVENTORY_CHANGED, {});
     this.bus.emit(GameEvents.EQUIPMENT_CHANGED, { equipment: this.equipment, shotsLeft: this.shotsLeft });
     this.bus.emit(GameEvents.HEALTH_CHANGED, { health: this.health, max: this.maxHealth });

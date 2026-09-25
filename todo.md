@@ -21,33 +21,43 @@ Docs: 24, 19
 
 ---
 
-## PHASE 1 — Foundation (v0.1.0) ✅ COMPLETE
+## PHASE 1 — Foundation (v0.1.0) ✅ DONE (pre-existing skeleton, re-verified 2026-09-26)
 Docs: 01, 02, 14, 15, 16, 18, 25
 
-- [x] EventBus + deterministic clock (pure logic, no DOM) — `src/core/events.js`, `clock.js`
-- [x] Player domain: health, inventory, equipment choice, beer state machine — `src/core/player.js`
-- [x] Engine: click-to-move on walkable tiles, hotspots, interaction routing — `src/core/engine.js`
-- [x] Pipe XOR beer exclusivity + explicit swap + 6-shot cycle + reload
-- [x] Drunk text perception filter (`src/core/beer-logic.js`) wired into message pipeline
-- [x] Beer surreal visual distortion (canvas CSS pass, reduced-distortion respected)
-- [x] Food healing (berries/bread) + soap gag item — data-driven in `content/bundle.js`
-- [x] Hammer danger events (telegraph, timed choices, deterministic outcomes)
-- [x] Perkele cat hazard with cooldown; Seppo rescue NPC (once-per-run, bread gift)
-- [x] Funny-recoverable death (revive overlay, no hard game-over)
-- [x] Puzzle system (steps, choices, hints, key-item gating via conditions)
-- [x] 3 scenes with exits/navigation covering Episode One beats 1–10 (skeleton scale)
-- [x] Content validator — `tools/validate-content.mjs` (stable IDs, reference checks)
-- [x] Save/load v1 (versioned localStorage, corruption-safe) — `src/persistence.js`
-- [x] Isometric 2.5D canvas renderer + camera framing + HUD (HP, equipment chip w/ click-swap, shots, beer badge, inventory)
-- [x] Keyboard controls (E/X/F/R/D/S/L/1-2-3/Esc) — docs/12
-- [x] TTS toggle + graceful fallback — `src/tts.js`; reduced-distortion option — docs/17
-- [x] Tests: 20/20 unit + 9/9 browser smoke green
+A working foundation already existed in the repo before this plan was executed
+(21/21 tests green, content validator OK, Pages build OK). It is recorded here
+for traceability — but per the golden rule we do NOT declare victory on it yet:
+Phase 1 proper now means *auditing and hardening* it against the specs before
+building Phase 2 on top. The audit tasks below are the real Phase 1 work.
 
-**Exit criteria:** fresh clone → tests green; Pages URL loads and room is playable. **MET.**
+### 1.A Audit & spec conformance (⬅ ACTIVE WORK)
+- [ ] Walk engine.js/player.js vs docs/02 (core gameplay contract): list every requirement met/unmet
+- [ ] Verify determinism: same inputs + same clock ticks ⇒ identical outcomes (no Math.random in core; seed check)
+- [ ] Verify AGENTS.md §3 non-negotiables one-by-one (pipe XOR beer, swap-before-drink, funny recovery, data-driven content, stable IDs)
+- [ ] Content-ID stability check: rename-detection test in validator; scene/item/puzzle/dialogue ID registry
+- [ ] Health-economy sanity: damage values vs food supply across the 3 scenes (table in docs note)
+- [ ] Save-format review: version field, migration hook, corrupt-save path covered by a test
+- [ ] Write `docs/STATUS.md`: what exists, where, how to run — single honest snapshot
+- [ ] Fix everything the audit finds; keep all existing tests green
+
+### 1.B Hardening & tooling
+- [ ] CI actually runs on push/PR (verify workflow triggers; add Pages-deploy comment header)
+- [ ] Browser smoke test runs in CI (Playwright job), not just locally
+- [ ] Error boundary: uncaught exception shows funny recoverable overlay, not blank page
+- [ ] Mobile/responsive pass on HUD + canvas scaling (docs/12, docs/17)
+- [ ] Performance guard: frame-time budget assertion in smoke test (≤ 16 ms avg)
+- [ ] README update: "How to run / test / deploy" section matching reality
+
+### 1.C Housekeeping (from docs/24 repo-workflow)
+- [ ] Move numbered specs into `docs/`, templates into `templates/` (git mv, links fixed)
+- [ ] Add CHANGELOG.md seeded from versions.md
+- [ ] Tag `v0.1.0` once 1.A–1.C all green
+
+**Exit criteria:** written audit showing every docs/02 + AGENTS.md §3 rule mapped to code or a fix; CI green including browser smoke; tag v0.1.0 pushed.
 
 ---
 
-## PHASE 2 — Signature Items Polish (v0.2.0) ⬅ CURRENT PHASE
+## PHASE 2 — Signature Items Polish (v0.2.0)
 Docs: 03, 04, 05, 06, 11, 22
 The mechanics exist; this phase makes them *feel* like the game's identity.
 
@@ -154,13 +164,16 @@ Docs: 19, 24
 
 ---
 
-## CURRENT STATUS SUMMARY (verified against code, 2026-09-26)
+## CURRENT STATUS SUMMARY (updated 2026-09-26)
 
 | Phase | Status |
 |---|---|
 | 0 — Repo setup | ✅ complete |
-| 1 — Foundation v0.1.0 | ✅ complete (mechanics incl. pipe/beer, beer distortion, hazards, save/load) |
-| 2 — Signature polish v0.2.0 | ⬅ **NEXT — start here** |
+| 1 — Foundation v0.1.0 | ⬅ **ACTIVE** — skeleton exists & is green (21/21 tests), now undergoing formal audit & hardening (1.A → 1.C) before tagging v0.1.0 |
+| 2 — Signature polish v0.2.0 | planned (mechanics already prototyped in skeleton; will absorb audit findings) |
 | 3–9 | not started |
 
-**Start Phase 2.** First task: comedic failure-line audit of `engine.js` + `player.js` against docs/22.
+**We are starting PHASE 1 properly.** First task: **1.A — spec-conformance audit**
+(walk `engine.js`/`player.js` against docs/02 + AGENTS.md §3, verify determinism,
+save-format review). The existing code is treated as a candidate implementation
+that must pass the audit, not as finished work.

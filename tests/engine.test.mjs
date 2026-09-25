@@ -244,3 +244,80 @@ test('seppo rescue only triggers when player is genuinely needy', () => {
   assert.ok(e.flags.seppo_done, 'needy -> rescued');
   assert.ok(e.player.hasItem('item_bread'));
 });
+
+// ---------- Phase 1 audit regressions (docs/02 determinism + AGENTS.md §3) ----------
+
+test('audit F-1: full beer chain passes through SURREAL and returns to SOBER', () => {
+  const e = makeEngine();
+  giveStarterKit(e);
+  e.equipBeer();
+  assert.equal(e.drinkBeer().ok, true);
+  assert.equal(e.player.beerState, BeerState.TIPSY);
+  e.clock.advance(e.content.tuning.beer.tipsySeconds + 0.001);
+  assert.equal(e.player.beerState, BeerState.SURREAL, 'SURREAL must be reachable');
+  e.clock.advance(e.content.tuning.beer.surrealSeconds + 0.001);
+  assert.equal(e.player.beerState, BeerState.RECOVERING);
+  e.clock.advance(e.content.tuning.beer.recoveringSeconds + 0.001);
+  assert.equal(e.player.beerState, BeerState.SOBER);
+});
+
+test('audit F-1: re-drink during RECOVERING starts a clean chain (no skipped SURREAL)', () => {
+  const e = makeEngine();
+  giveStarterKit(e);
+  e.equipBeer();
+  e.drinkBeer();
+  const t = e.content.tuning.beer;
+  e.clock.advance(t.tipsySeconds + t.surrealSeconds + 0.001); // now RECOVERING
+  assert.equal(e.player.beerState, BeerState.RECOVERING);
+  assert.equal(e.drinkBeer().ok, true); // allowed while recovering
+  assert.equal(e.player.beerState, BeerState.TIPSY);
+  e.clock.advance(t.tipsySeconds + 0.001);
+  assert.equal(e.player.beerState, BeerState.SURREAL, 'stale timer must not skip SURREAL');
+  e.clock.advance(t.surrealSeconds + 0.001);
+  assert.equal(e.player.beerState, BeerState.RECOVERING);
+  e.clock.advance(t.recoveringSeconds + 0.001);
+  assert.equal(e.player.beerState, BeerState.SOBER);
+});
+
+test('audit F-2: swapping pipe->beer mid-session ends it soberly, no stale timers', () => {
+  const e = makeEngine();
+  giveStarterKit(e);
+  e.equipBeer();
+  e.drinkBeer();
+  e.swapEquipment(); // -> PIPE
+  e.swapEquipment(); // -> BEER again
+  assert.equal(e.player.beerState, BeerState.SOBER);
+  const t = e.content.tuning.beer;
+  e.clock.advance(t.tipsySeconds + t.surrealSeconds + t.recoveringSeconds + 5);
+  assert.equal(e.player.beerState, BeerState.SOBER, 'old session timers must not fire');
+});
+
+test('audit F-3: revive cancels pending beer transitions', () => {
+  const e = makeEngine();
+  giveStarterKit(e);
+  e.equipBeer();
+  e.drinkBeer();
+  e.player.takeDamage(999, 'audit');
+  assert.equal(e.gameOver, true);
+  e.revive();
+  assert.equal(e.player.beerState, BeerState.SOBER);
+  e.clock.advance(600);
+  assert.equal(e.player.beerState, BeerState.SOBER, 'revive must kill stale beer timers');
+});
+
+test('determinism: identical action sequences produce identical state', () => {
+  const run = () => {
+    const e = makeEngine();
+    giveStarterKit(e);
+    e.equipPipe();
+    for (let i = 0; i < 7; i++) e.firePipe('audit target');
+    e.reloadPipe();
+    e.swapEquipment(); // -> BEER
+    e.drinkBeer();
+    e.update(3.5); // deterministic clock advance
+    e.clickObject('obj_bush');
+    e.eatFood('item_berries');
+    return JSON.stringify(e.player.serialize()) + '|' + String(e.clock.now());
+  };
+  assert.equal(run(), run());
+});

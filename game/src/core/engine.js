@@ -424,6 +424,7 @@ export class Engine {
     // Recoverable failure: respawn sober-ish with partial health.
     this.gameOver = false;
     this.player.health = Math.ceil(this.player.maxHealth / 2);
+    this.player.cancelBeerSession(); // audit F-3: stale beer timers must not fire post-revive
     this.player._setBeerState(BeerState.SOBER);
     this.bus.emit(GameEvents.HEALTH_CHANGED, { health: this.player.health, max: this.player.maxHealth });
     const scene = this._scene();
