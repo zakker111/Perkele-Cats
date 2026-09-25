@@ -9,7 +9,10 @@ import { filterDrunkText, suspiciousNpcLine, surrealInspect, isCriticalLine, CRI
 
 export class Engine {
   constructor(content) {
-    this.content = content; // validated bundle: {scenes, items, npcs, puzzles, dialogue, tuning}
+    // BUG-6 fix: engine state (taken objects, scene mutations) must never leak
+    // back into the shared content module. Deep-clone so multiple engines /
+    // test runs / hot-reload cannot corrupt each other's world data.
+    this.content = structuredClone(content); // validated bundle: {scenes, items, npcs, puzzles, dialogue, tuning}
     this.bus = new EventBus();
     this.clock = new Clock();
     this.player = new Player(this.bus, content.tuning);

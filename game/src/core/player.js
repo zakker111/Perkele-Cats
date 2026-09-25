@@ -130,10 +130,11 @@ export class Player {
       this._setBeerState(BeerState.SOBER);
     }
     const needItem = next === EquipmentState.PIPE ? t.pipeItemId : t.beerItemId;
+    const prev = this.equipment; // BUG-5 fix: capture BEFORE equip mutates the slot
     const res = this.equip(next, needItem);
     if (res.ok) {
       // Phase 2 (docs/12): dedicated feedback event so the HUD can flourish.
-      this.bus.emit(GameEvents.EQUIPMENT_SWAPPED, { from: this.equipment === next ? null : this.equipment, to: next });
+      this.bus.emit(GameEvents.EQUIPMENT_SWAPPED, { from: prev, to: next });
     }
     return res;
   }

@@ -483,6 +483,44 @@ test('P2: inspect coverage — every item has flavor text; surreal alternates ex
   assert.match(e.messages.at(-1), /click glowing things/i);
 });
 
+test('BUG-5 regression: EQUIPMENT_SWAPPED payload reports the PREVIOUS slot', () => {
+  const e = makeEngine();
+  giveStarterKit(e);
+  const swaps = [];
+  e.bus.on(GameEvents.EQUIPMENT_SWAPPED, (p) => swaps.push(p));
+  // NONE -> PIPE (first equip; from is null-ish)
+  assert.ok(e.equipPipe().ok);
+  // PIPE -> BEER must report from: 'PIPE' even though the slot already mutated
+  assert.ok(e.swapEquipment().ok);
+  assert.equal(swaps.at(-1).from, EquipmentState.PIPE);
+  assert.equal(swaps.at(-1).to, EquipmentState.BEER);
+  // BEER -> PIPE must report from: 'BEER'
+  assert.ok(e.swapEquipment().ok);
+  assert.equal(swaps.at(-1).from, EquipmentState.BEER);
+  assert.equal(swaps.at(-1).to, EquipmentState.PIPE);
+});
+
+test('BUG-6 regression: engine never mutates the shared content bundle', () => {
+  const countBush = (c) =>
+    c.scenes.find((s) => s.id === 'scene_moi').objects.filter((o) => o.id === 'obj_bush_take').length;
+  // The engine clones content internally...
+  const e = new Engine(realContent);
+  e.start(realContent.startScene, { x: 2, y: 4 });
+  assert.notEqual(e.content, realContent); // defensive clone exists
+  // ...clicking away ALL copies of an object (consumed via array filter)
+  while (e.content.scenes.some((s) => s.objects.some((o) => o.id === 'obj_bush_take'))) {
+    giveStarterKit(e);
+    e.clickObject('obj_bush_take');
+    e.clock.advance(30); // clear any cooldowns between attempts
+  }
+  assert.equal(countBush(e.content), 0); // local world is spent...
+  assert.ok(countBush(realContent) > 0); // ...but the module-level bundle is pristine
+  // A fresh engine from the same bundle sees the bush again.
+  const e2 = new Engine(realContent);
+  e2.start(realContent.startScene, { x: 2, y: 4 });
+  assert.ok(countBush(e2.content) > 0);
+});
+
 test('P2: gag rotation counters persist through save/load (no reset exploit)', () => {
   const e = makeEngine();
   giveStarterKit(e);
