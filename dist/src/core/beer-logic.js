@@ -143,11 +143,89 @@ export const DRUNK_FILTERS = Object.freeze({
 
 const SURREAL_SUFFIX = ' …the world hums in B-flat.';
 
+// ---------- multi-beer escalation (Phase 2, docs/05) ----------
+// A second+ beer deepens the surreal state instead of resetting it: extra
+// word layers and stronger visual distortion. Presentation-only — puzzle
+// facts and required item labels stay readable (docs/05 accessibility rule).
+
+const ESCALATION_TABLES = Object.freeze({
+  2: Object.freeze({
+    friend: 'certified human-shaped companion',
+    forest: 'green parliament',
+    time: 'melting Tuesday',
+    work: 'voluntary hallucination',
+    night: 'when the floorboards gossip',
+    door: 'wooden challenge',
+    key: 'metal confidence',
+    problem: 'opportunity-shaped boulder',
+    cat: 'furry tax collector',
+    hammer: 'Tarmo\'s punctuation device',
+    bread: 'square soup (solid variant)',
+    beer: 'liquid honesty (double shot)',
+    pipe: 'the six opinions (unanimous)',
+    health: 'soul load-bearing wall',
+    fire: 'enthusiastic lighting',
+    cold: 'aggressively Nordic',
+    truth: 'draft number four',
+    life: 'the tutorial that never ends',
+    silence: 'confident nothing',
+    smoke: 'the sauna\'s alibi',
+    head: 'thought cathedral',
+    mind: 'internal parliament in session',
+    wait: 'standing still with ambition',
+    lost: 'geographically existential',
+    easy: 'arrogantly smooth',
+    hard: 'personally offensive physics',
+  }),
+  3: Object.freeze({
+    friend: 'temporary permanent friend',
+    forest: 'one very large green opinion',
+    time: 'a rumor told by clocks',
+    night: 'when the furniture forms a government',
+    door: 'commitment machine',
+    problem: 'opportunity-shaped mountain range',
+    cat: 'apex chaos accountant',
+    hammer: 'the final argument',
+    bread: 'edible mattress',
+    beer: 'philosophy juice',
+    pipe: 'six unanimous opinions',
+    health: 'spiritual plumbing',
+    fire: 'portable sunset',
+    cold: 'Scandinavia\'s personality',
+    truth: 'one of several competing drafts',
+    life: 'an unskippable cutscene',
+    silence: 'a crowd of held breaths',
+    smoke: 'the building\'s daydream',
+    head: 'meat lighthouse',
+    mind: 'parliament on fire (safely)',
+    lost: 'spatially optimistic',
+    easy: 'suspiciously frictionless',
+    hard: 'physics with a personal grudge',
+    hello: 'greetings, fellow temporary meat',
+    yes: 'the universe agrees loudly',
+    no: 'no, but also everything, but mostly no',
+  }),
+});
+
+export const MAX_ESCALATION = 3; // beers 4+ behave like beer #3
+
+/** Extra word layer for the Nth beer consumed in one session (N>=2). */
+export function getEscalationTable(level) {
+  return ESCALATION_TABLES[Math.min(level, MAX_ESCALATION)] || null;
+}
+
+/** CSS class the presentation layer applies to the canvas per escalation. */
+export function getBeerVisualClass(level) {
+  if (level >= 3) return 'surreal-deep';
+  if (level === 2) return 'surreal-mid';
+  return 'surreal-base';
+}
+
 /**
  * Apply the drunk dialogue filter to a message line.
  * @param {string} text raw line ("Speaker: content" supported)
  * @param {'SOBER'|'TIPSY'|'SURREAL'|'RECOVERING'} beerState
- * @param {{reducedDistortion?: boolean}} [opts]
+ * @param {{reducedDistortion?: boolean, escalationLevel?: number}} [opts]
  * @returns {string} filtered (or original) text
  */
 export function filterDrunkText(text, beerState, opts = {}) {
@@ -165,9 +243,12 @@ export function filterDrunkText(text, beerState, opts = {}) {
     body = m[2];
   }
 
+  const extra = opts.escalationLevel >= 2 ? getEscalationTable(opts.escalationLevel) : null;
   let hits = 0;
   const out = body.replace(/[A-Za-zÄÖÅäöå]+/g, (word) => {
-    const rep = table[word.toLowerCase()];
+    const lower = word.toLowerCase();
+    // Escalation layer overrides the base table: deeper beer = stranger words.
+    const rep = (extra && extra[lower]) || table[lower];
     if (!rep) return word;
     hits += 1;
     return /^[A-Z]/.test(word) ? rep.charAt(0).toUpperCase() + rep.slice(1) : rep;
@@ -177,4 +258,45 @@ export function filterDrunkText(text, beerState, opts = {}) {
     return `${prefix}${out}${SURREAL_SUFFIX}`;
   }
   return prefix + out;
+}
+
+// ---------- surreal NPC suspicion (docs/05: "silly NPC reactions") ----------
+// Presentation-only overlay on dialogue lines while SURREAL. Authoritative
+// clean text stays in content data; puzzle-critical facts survive because we
+// only append a paranoid aside — we never remove information.
+
+const SUSPICION_ASIDE = ' …why is it standing so still? FURNITURE DOES NOT BREATHE.';
+
+// Lines that carry authoritative rules or puzzle-critical facts are NEVER
+// filtered or decorated (docs/05 + docs/17 accessibility contract: surreal
+// flavor may add comedy, but must never distort or bury an instruction).
+// Content data marks such lines with `critical: true` — data-driven, stable.
+export const CRITICAL_LINE_MARKER = '⚖ '; // display prefix so players see WHY this line is clean
+
+/** True if a raw content line is flagged as rule/puzzle-critical. */
+export function isCriticalLine(rawLine) {
+  return !!(rawLine && typeof rawLine === 'object' && rawLine.critical === true);
+}
+
+/**
+ * Decorate a dialogue line for a suspicious drunk perception.
+ * @param {string} line already-filtered dialogue line ("Speaker: text")
+ * @param {{beerState: string, reducedDistortion?: boolean}} ctx
+ * @returns {string}
+ */
+export function suspiciousNpcLine(line, ctx) {
+  if (ctx.beerState !== BeerState.SURREAL || ctx.reducedDistortion) return line;
+  // Only human NPCs read as suspicious; the player's own narration is untouched.
+  if (!/^(Maija|Tarmo|Seppo):/.test(line)) return line;
+  // Rule/instruction lines stay clean — paranoia aside would dilute them.
+  if (line.startsWith(CRITICAL_LINE_MARKER)) return line;
+  return line + SUSPICION_ASIDE;
+}
+
+/** Alternate surreal inspection line (docs/05), if one exists for the object. */
+export function surrealInspect(obj, ctx) {
+  if (ctx.beerState === BeerState.SURREAL && !ctx.reducedDistortion && obj.surrealText) {
+    return obj.surrealText;
+  }
+  return obj.text;
 }

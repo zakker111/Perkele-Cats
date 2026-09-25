@@ -112,14 +112,18 @@ AGENTS.md §2 stable-id rule.
 Docs: 03, 04, 05, 06, 11, 22
 The mechanics exist; this phase makes them *feel* like the game's identity.
 
-- [ ] Comedic failure audit: every wrong action (7th shot, drink-with-pipe, eat soap) gets a distinct joke line per docs/22
-- [ ] Pipe targeting: fire only at valid targets (cats, hammer); "blast into the sky" miss gag elsewhere — docs/06
-- [ ] Beer escalation variety: 2nd+ beer deepens SURREAL tint / adds wobble layers — docs/05
-- [ ] Surreal gameplay nudge: friendly NPCs read as suspicious while SURREAL (and back) — docs/05
-- [ ] Swap animation/feedback: brief HUD flourish so the XOR choice reads clearly — docs/12
-- [ ] Item inspect coverage: every inventory item has flavor text (template format, docs/15)
-- [ ] New tests: shot accounting vs target types, multi-beer escalation, swap feedback events
-- [ ] Update `versions.md` changelog + tag `v0.2.0`
+**Status: ✅ IMPLEMENTED 2026-09-26** (commit d19454b + critical-line fix).
+Exit criteria met: ≥10 distinct comedic failure/gag moments audited in code, zero silent failures;
+remaining: docs/24 housekeeping (CHANGELOG + v0.2.0 tag).
+
+- [x] Comedic failure audit: every wrong action (7th shot, drink-with-pipe, eat soap) gets a distinct joke line per docs/22 — DONE (deterministic gag rotation; test 'P2: comedic failure audit')
+- [x] Pipe targeting: fire only at valid targets (cats, hammer); "blast into the sky" miss gag elsewhere — docs/06 — DONE (test 'P2: pipe targeting')
+- [x] Beer escalation variety: 2nd+ beer deepens SURREAL tint / adds wobble layers — docs/05 — DONE (escalation tables L2/L3 + visual classes; test 'P2: multi-beer escalation')
+- [x] Surreal gameplay nudge: friendly NPCs read as suspicious while SURREAL (and back) — docs/05 — DONE (suspicion aside; critical rule lines exempt via `critical:true` data flag; test 'P2: surreal NPC suspicion')
+- [x] Swap animation/feedback: brief HUD flourish so the XOR choice reads clearly — docs/12 — DONE (EQUIPMENT_SWAPPED event + toast; test 'P2: swap feedback')
+- [x] Item inspect coverage: every inventory item has flavor text (template format, docs/15) — DONE (validator + test 'P2: inspect coverage')
+- [x] New tests: shot accounting vs target types, multi-beer escalation, swap feedback events — DONE (34/34 green incl. gag-rotation save/load persistence)
+- [ ] Update `versions.md` changelog + tag `v0.2.0` — pending housekeeping (see 1.C: docs move + CHANGELOG first)
 
 **Exit criteria:** pipe/beer exclusivity is felt in ≥10 distinct comedic moments; zero silent failures.
 
@@ -220,11 +224,13 @@ Docs: 19, 24
 | Phase | Status |
 |---|---|
 | 0 — Repo setup | ✅ complete |
-| 1 — Foundation v0.1.0 | ⬅ **ACTIVE** — skeleton exists & is green (21/21 tests), now undergoing formal audit & hardening (1.A → 1.C) before tagging v0.1.0 |
-| 2 — Signature polish v0.2.0 | planned (mechanics already prototyped in skeleton; will absorb audit findings) |
-| 3–9 | not started |
+| 1 — Foundation v0.1.0 | ✅ 1.A audit DONE (F-1/F-2/F-3 fixed, determinism proven); 1.B hardening & 1.C housekeeping (docs move, CHANGELOG, tag) remain |
+| 2 — Signature polish v0.2.0 | ✅ implemented & tested (34/34 green) — awaiting 1.C-style housekeeping to tag v0.2.0 |
+| 3 — Danger & Characters v0.3.0 | ⬅ **NEXT ACTIVE PHASE** |
+| 4–9 | not started |
 
-**We are starting PHASE 1 properly.** First task: **1.A — spec-conformance audit**
-(walk `engine.js`/`player.js` against docs/02 + AGENTS.md §3, verify determinism,
-save-format review). The existing code is treated as a candidate implementation
-that must pass the audit, not as finished work.
+**Next up: PHASE 3 — Danger & Characters Expansion (v0.3.0).**
+Cat packs, more hammer variants, data-driven dialogue trees, Seppo personality pass,
+encounter-matrix tests. The 1.B/1.C leftovers (CI smoke job, error overlay, docs/ move,
+CHANGELOG, tags v0.1.0/v0.2.0) are pure tooling/housekeeping and can be cleared in one
+pass any time — they gate tagging, not gameplay work.

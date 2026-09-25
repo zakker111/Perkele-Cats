@@ -36,8 +36,8 @@ export const content = {
       setFlag: 'met_maija',
       lines: [
         { speaker: 'Maija', text: 'You smell like sauna smoke and bad decisions.' },
-        { speaker: 'Maija', text: 'Take the pipe. Or the beer. Never both at once. That is the law.' },
-        { speaker: 'Maija', text: 'Press E to equip, X to swap. The universe is full of switches.' },
+        { speaker: 'Maija', text: 'Take the pipe. Or the beer. Never both at once. That is the law.', critical: true },
+        { speaker: 'Maija', text: 'Press E to equip, X to swap. The universe is full of switches.', critical: true },
       ],
     },
     dlg_tarmo_grumble: {

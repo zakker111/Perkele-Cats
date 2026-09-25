@@ -36,6 +36,18 @@ export class Player {
     // One token identifying the current beer session: swapping timers into a
     // single cancelable handle makes stale transitions impossible (audit F-1).
     this.beerSession = 0;
+    // Phase 2 (docs/05): how many beers deep the current session is. Drives
+    // escalation layers in beer-logic + renderer. Resets when fully sober.
+    this.beerLevel = 0;
+    // Deterministic gag rotation counters (docs/22 recurring jokes with
+    // variations). Never Math.random — clock + counters only.
+    this.gagCounters = {};
+  }
+
+  /** Deterministic rotating pick from a list of joke lines (docs/22). */
+  _gag(key, lines) {
+    const n = (this.gagCounters[key] = (this.gagCounters[key] || 0) + 1);
+    return lines[(n - 1) % lines.length];
   }
 
   // ---------- health ----------
@@ -107,6 +119,9 @@ export class Player {
   swapEquipment() {
     // Explicit visible swap between the two signature choices.
     const t = this.tuning.player;
+    if (this.equipment !== EquipmentState.PIPE && this.equipment !== EquipmentState.BEER) {
+      return { ok: false, reason: 'Nothing to swap yet. You need both a pipe and a beer first.' };
+    }
     const next = this.equipment === EquipmentState.PIPE ? EquipmentState.BEER : EquipmentState.PIPE;
     if (next === EquipmentState.BEER && this.beerState !== BeerState.SOBER) {
       // Audit F-2: swapping to beer mid-session must not resurrect a dead
@@ -115,7 +130,12 @@ export class Player {
       this._setBeerState(BeerState.SOBER);
     }
     const needItem = next === EquipmentState.PIPE ? t.pipeItemId : t.beerItemId;
-    return this.equip(next, needItem);
+    const res = this.equip(next, needItem);
+    if (res.ok) {
+      // Phase 2 (docs/12): dedicated feedback event so the HUD can flourish.
+      this.bus.emit(GameEvents.EQUIPMENT_SWAPPED, { from: this.equipment === next ? null : this.equipment, to: next });
+    }
+    return res;
   }
 
   /** Cancel all pending beer-state transitions for the current session. */
@@ -138,10 +158,18 @@ export class Player {
 
   canFirePipe() {
     if (this.equipment !== EquipmentState.PIPE) {
-      return { ok: false, reason: 'The pipe is not equipped. Press [E] to select it.' };
+      return { ok: false, reason: this._gag('pipe-not-equipped', [
+        'The pipe is not equipped. It watches you struggle from your pocket, smug.',
+        'You are holding the wrong legend. Press [X] to swap to the pipe.',
+        'The pipe stays holstered until you commit. Like most Finnish plans.',
+      ]) };
     }
     if (this.shotsLeft <= 0) {
-      return { ok: false, reason: 'The pipe is empty. It rattles sadly. Press [R] to reload.' };
+      return { ok: false, reason: this._gag('pipe-empty', [
+        'Click. Empty. The pipe rattles sadly, like a maraca of regret. Press [R].',
+        'Nothing but tobacco-flavored disappointment. Reload with [R].',
+        'The pipe has expressed all six of its opinions. Reload it.',
+      ]) };
     }
     return { ok: true };
   }
@@ -152,7 +180,7 @@ export class Player {
     this.shotsLeft -= 1;
     this.bus.emit(GameEvents.PIPE_FIRED, { shotsLeft: this.shotsLeft });
     if (this.shotsLeft === 0) {
-      this.bus.emit(GameEvents.MESSAGE, { text: 'CLONK. That was the last shot. The pipe is empty.' });
+      this.bus.emit(GameEvents.MESSAGE, { text: 'CLONK. That was the last shot. The pipe goes silent, emotionally.' });
     }
     return { ok: true, shotsLeft: this.shotsLeft };
   }
@@ -162,16 +190,28 @@ export class Player {
   canDrinkBeer() {
     if (this.equipment === EquipmentState.PIPE) {
       // Non-negotiable rule (AGENTS.md §3): UI must explain the swap.
-      return { ok: false, reason: 'You cannot drink while the pipe is equipped. Swap equipment first [E/X].' };
+      return { ok: false, reason: this._gag('drink-with-pipe', [
+        'You cannot drink with the pipe in hand. The Pipe Council forbids it. Press [X] to swap.',
+        'The beer refuses to compete with six shots of authority. Swap equipment first [X].',
+        'Drinking requires a free-ish hand. The pipe is holding ALL of your hands. Press [X].',
+      ]) };
     }
     if (this.equipment !== EquipmentState.BEER) {
-      return { ok: false, reason: 'Equip the beer first [E], then drink [D].' };
+      return { ok: false, reason: 'Equip the beer first [E], then drink [D]. Basic beverage ergonomics.' };
     }
     if (!this.hasItem(this.tuning.player.beerItemId)) {
-      return { ok: false, reason: 'No beer left. The bottle is an illusion of hope.' };
+      return { ok: false, reason: this._gag('no-beer', [
+        'No beer left. The bottle was an illusion of hope, now deeply practical disappointment.',
+        'Empty. You stare into the glass like it owes you money. It does.',
+        'Zero beers. The fridge in your mind closes politely.',
+      ]) };
     }
     if (this.beerState !== BeerState.SOBER && this.beerState !== BeerState.RECOVERING) {
-      return { ok: false, reason: 'You are already seeing sideways. Wait for the world to stop breathing.' };
+      return { ok: false, reason: this._gag('already-drunk', [
+        'You are already seeing sideways. Wait for the world to stop breathing.',
+        'Another one? The floor has filed a restraining order. Wait it out.',
+        'Your liver sends a strongly worded fax. Recovery in progress.',
+      ]) };
     }
     return { ok: true };
   }
@@ -182,7 +222,8 @@ export class Player {
     const beerId = this.tuning.player.beerItemId;
     this.removeItem(beerId);
     this.bus.emit(GameEvents.ITEM_CONSUMED, { itemId: beerId });
-    this.bus.emit(GameEvents.BEER_DRANK, {});
+    this.beerLevel += 1; // Phase 2: session depth drives escalation layers
+    this.bus.emit(GameEvents.BEER_DRANK, { level: this.beerLevel });
 
     this._setBeerState(BeerState.TIPSY);
     const t = this.tuning.beer;
@@ -198,9 +239,13 @@ export class Player {
     clock.after(t.tipsySeconds + t.surrealSeconds, guarded(BeerState.RECOVERING));
     clock.after(
       t.tipsySeconds + t.surrealSeconds + t.recoveringSeconds,
-      guarded(BeerState.SOBER),
+      () => {
+        if (this.beerSession !== session) return;
+        this.beerLevel = 0; // fully sober: session depth resets
+        this._setBeerState(BeerState.SOBER);
+      },
     );
-    return { ok: true };
+    return { ok: true, level: this.beerLevel };
   }
 
   _setBeerState(state) {
@@ -246,6 +291,7 @@ export class Player {
       equipment: this.equipment,
       shotsLeft: this.shotsLeft,
       beerState: this.beerState,
+      gagCounters: { ...this.gagCounters },
     };
   }
 
@@ -256,6 +302,8 @@ export class Player {
     this.equipment = data.equipment;
     this.shotsLeft = data.shotsLeft;
     this.beerState = BeerState.SOBER; // never save mid-surreal; sobriety on load
+    this.beerLevel = 0;
+    this.gagCounters = data.gagCounters ? { ...data.gagCounters } : {};
     this.cancelBeerSession(); // audit F-1: drop any pending transitions from before the save
     this.bus.emit(GameEvents.INVENTORY_CHANGED, {});
     this.bus.emit(GameEvents.EQUIPMENT_CHANGED, { equipment: this.equipment, shotsLeft: this.shotsLeft });

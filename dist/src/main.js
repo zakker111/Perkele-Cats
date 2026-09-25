@@ -217,7 +217,7 @@ function refreshHud() {
       if (def.type === 'food') engine.eatFood(id);
       else if (id === 'item_pipe') engine.equipPipe();
       else if (id === 'item_beer_bottle') engine.equipBeer();
-      else engine.say(def.inspectText);
+      else engine.say(def.useText || def.inspectText || 'You poke it philosophically.');
     };
     ui.inventory.appendChild(btn);
   }
@@ -280,25 +280,35 @@ engine.bus.on(GameEvents.SCENE_ENTERED, ({ scene }) => {
   ui.sceneName.textContent = scene.displayName;
   hidePuzzle();
 });
-engine.bus.on(GameEvents.MESSAGE, ({ text }) => {
-  // Drunk perception filter (docs/05) lives in the engine's message pipeline;
-  // replicate here so the log/TTS show what the player "hears". Text stays
-  // readable: whole-word substitutions only, and reduced-distortion disables it.
-  const perceived = filterDrunkText(text, engine.player.beerState, {
-    reducedDistortion: document.body.classList.contains('reduced-distortion'),
-  });
+engine.bus.on(GameEvents.MESSAGE, ({ text }) => showLogLine(text));
+// Critical rule lines bypass the drunk filter (sayRaw) but still reach the log/TTS.
+engine.bus.on(GameEvents.RAW_MESSAGE, ({ text }) => showLogLine(text));
+
+function showLogLine(perceived) {
+  // The engine's message pipeline already applied the drunk perception filter
+  // (docs/05). The log shows exactly what the player "hears" — no double filter.
   const div = document.createElement('div');
   div.textContent = perceived;
   ui.log.prepend(div);
   while (ui.log.children.length > 30) ui.log.lastChild.remove();
   speakLine(perceived);
-});
+}
 engine.bus.on(GameEvents.PUZZLE_STEP, ({ puzzleId }) => showPuzzle(puzzleId));
 engine.bus.on(GameEvents.HAMMER_EVENT_STARTED, () => refreshHammer());
 engine.bus.on(GameEvents.HAMMER_EVENT_RESOLVED, () => refreshHammer());
 engine.bus.on(GameEvents.BEER_STATE_CHANGED, ({ state }) => {
-  canvas.classList.toggle('surreal', state === 'SURREAL');
+  const deep = state === 'SURREAL';
+  canvas.classList.toggle('surreal', deep);
+  // Phase 2 multi-beer escalation: 2nd+ beer adds visual layers (docs/05).
+  canvas.classList.toggle('surreal-mid', deep && engine.player.beerLevel === 2);
+  canvas.classList.toggle('surreal-deep', deep && engine.player.beerLevel >= 3);
   document.body.classList.toggle('tipsy', state === 'TIPSY' || state === 'RECOVERING');
+});
+// Swap flourish (docs/12): HUD pulse so the XOR choice reads clearly.
+engine.bus.on(GameEvents.EQUIPMENT_SWAPPED, () => {
+  ui.equip.classList.remove('swap-flash');
+  void ui.equip.offsetWidth; // restart animation
+  ui.equip.classList.add('swap-flash');
 });
 engine.bus.on(GameEvents.GAME_OVER, () => {
   showOverlay('<h2>☠ You are dead.</h2><p>The forest wins this round. Retry is free; dignity costs extra.</p>',

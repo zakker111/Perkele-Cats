@@ -267,6 +267,17 @@ export function filterDrunkText(text, beerState, opts = {}) {
 
 const SUSPICION_ASIDE = ' …why is it standing so still? FURNITURE DOES NOT BREATHE.';
 
+// Lines that carry authoritative rules or puzzle-critical facts are NEVER
+// filtered or decorated (docs/05 + docs/17 accessibility contract: surreal
+// flavor may add comedy, but must never distort or bury an instruction).
+// Content data marks such lines with `critical: true` — data-driven, stable.
+export const CRITICAL_LINE_MARKER = '⚖ '; // display prefix so players see WHY this line is clean
+
+/** True if a raw content line is flagged as rule/puzzle-critical. */
+export function isCriticalLine(rawLine) {
+  return !!(rawLine && typeof rawLine === 'object' && rawLine.critical === true);
+}
+
 /**
  * Decorate a dialogue line for a suspicious drunk perception.
  * @param {string} line already-filtered dialogue line ("Speaker: text")
@@ -277,6 +288,8 @@ export function suspiciousNpcLine(line, ctx) {
   if (ctx.beerState !== BeerState.SURREAL || ctx.reducedDistortion) return line;
   // Only human NPCs read as suspicious; the player's own narration is untouched.
   if (!/^(Maija|Tarmo|Seppo):/.test(line)) return line;
+  // Rule/instruction lines stay clean — paranoia aside would dilute them.
+  if (line.startsWith(CRITICAL_LINE_MARKER)) return line;
   return line + SUSPICION_ASIDE;
 }
 

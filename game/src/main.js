@@ -280,16 +280,19 @@ engine.bus.on(GameEvents.SCENE_ENTERED, ({ scene }) => {
   ui.sceneName.textContent = scene.displayName;
   hidePuzzle();
 });
-engine.bus.on(GameEvents.MESSAGE, ({ text }) => {
+engine.bus.on(GameEvents.MESSAGE, ({ text }) => showLogLine(text));
+// Critical rule lines bypass the drunk filter (sayRaw) but still reach the log/TTS.
+engine.bus.on(GameEvents.RAW_MESSAGE, ({ text }) => showLogLine(text));
+
+function showLogLine(perceived) {
   // The engine's message pipeline already applied the drunk perception filter
   // (docs/05). The log shows exactly what the player "hears" — no double filter.
-  const perceived = text;
   const div = document.createElement('div');
   div.textContent = perceived;
   ui.log.prepend(div);
   while (ui.log.children.length > 30) ui.log.lastChild.remove();
   speakLine(perceived);
-});
+}
 engine.bus.on(GameEvents.PUZZLE_STEP, ({ puzzleId }) => showPuzzle(puzzleId));
 engine.bus.on(GameEvents.HAMMER_EVENT_STARTED, () => refreshHammer());
 engine.bus.on(GameEvents.HAMMER_EVENT_RESOLVED, () => refreshHammer());

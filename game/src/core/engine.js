@@ -5,7 +5,7 @@
 import { EventBus, GameEvents } from './events.js';
 import { Clock } from './clock.js';
 import { Player, EquipmentState, BeerState, MAX_SHOTS } from './player.js';
-import { filterDrunkText, suspiciousNpcLine, surrealInspect } from './beer-logic.js';
+import { filterDrunkText, suspiciousNpcLine, surrealInspect, isCriticalLine, CRITICAL_LINE_MARKER } from './beer-logic.js';
 
 export class Engine {
   constructor(content) {
@@ -74,6 +74,14 @@ export class Engine {
 
   say(text) {
     this.bus.emit(GameEvents.MESSAGE, { text });
+  }
+
+  /** Emit a message that bypasses the drunk filter (critical rule lines). */
+  sayRaw(text) {
+    this.messages.push(text);
+    if (this.messages.length > 50) this.messages.shift();
+    this.lastMessage = text;
+    this.bus.emit(GameEvents.RAW_MESSAGE, { text });
   }
 
   /** Deterministic rotating joke line (docs/22 recurring jokes, no Math.random). */
@@ -391,7 +399,12 @@ export class Engine {
     const d = this.content.dialogue[dialogueId];
     if (!d) return;
     this.bus.emit(GameEvents.DIALOGUE_STARTED, { dialogueId });
-    for (const line of d.lines) this.say(`${line.speaker}: ${line.text}`);
+    for (const line of d.lines) {
+      // docs/05 + docs/17: critical rule/instruction lines bypass the drunk
+      // filter entirely and get a ⚖ marker so the clean text reads as law.
+      if (isCriticalLine(line)) this.sayRaw(`${CRITICAL_LINE_MARKER}${line.speaker}: ${line.text}`);
+      else this.say(`${line.speaker}: ${line.text}`);
+    }
     if (d.setFlag) this.setFlag(d.setFlag);
     this.bus.emit(GameEvents.DIALOGUE_FINISHED, { dialogueId });
   }
