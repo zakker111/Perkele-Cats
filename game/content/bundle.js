@@ -29,6 +29,8 @@ export const content = {
     item_gate_key: { id: 'item_gate_key', type: 'key', displayName: 'Rusty Gate Key', stackable: false,
       inspectText: 'Opens the forest gate. Smells of perseverance.',
       useText: 'The key is eager. It has dreams of being a spoon, but it chose duty.' },
+    item_life_ring: { id: 'item_life_ring', type: 'misc', displayName: 'Red Life Ring', stackable: false,
+      inspectText: 'A floating circle of institutional safety. The lake demands one. Bureaucracy is hydrodynamic.' },
   },
 
   dialogue: {
@@ -157,12 +159,45 @@ export const content = {
           wrongText: 'Poetry will not ignite birch bark.',
         },
       ],
+      solvedText: 'The stove ticks along contentedly. It has better things to do than re-light itself.',
       successText: 'PUZZLE SOLVED: The stove works! Maija nods from across the yard, trying not to smile.',
       setFlag: 'stove_solved',
       rewardItem: 'item_gate_key',
     },
+    puzzle_lake: {
+      // Multi-step chain step 2 (docs/07): rowboat needs oars + a life ring.
+      intro: 'A rowboat waits on the dock. The far shore is where the story keeps its finale.',
+      steps: [
+        {
+          question: 'The oarlocks are empty. Two candidates lie nearby:',
+          choices: ['The sauna bench slats (structurally optimistic)', 'The suspicious stick and its emotional support twin', 'Wish harder'],
+          answerIndex: 1,
+          correctText: 'The sticks achieve their destiny: official oars. The lake is impressed.',
+          wrongText: 'The bench files a formal complaint and stays attached to the wall.',
+          hint: 'One of these items has already proven its versatility in puzzles past.',
+        },
+        {
+          question: 'Safety inspection time. What goes in the boat?',
+          choices: ['A life ring, obviously', 'More logs "for later"', 'Your doubts'],
+          answerIndex: 0,
+          correctText: 'Life ring aboard. The water accepts these terms.',
+          wrongText: 'The lake rejects your doubt-based flotation theory.',
+          conditions: { items: ['item_life_ring'] },
+        },
+        {
+          question: 'Final cast-off: push off with:',
+          choices: ['Foot, pole, and commitment', 'Pure beer-fueled confidence', 'Backwards paddle, like a legend'],
+          answerIndex: 2,
+          correctText: 'You punt off smoothly. The forest gate glitters on the far shore.',
+          wrongText: 'The boat spins once, politely dizzy, and returns you to the dock.',
+        },
+      ],
+      solvedText: 'The rowboat rests at the far shore, job complete, emotionally available for one more trip.',
+      successText: 'PUZZLE SOLVED: You reach the far shore! The gate looms ahead, mossy and smug.',
+      setFlag: 'lake_crossed',
+    },
     puzzle_finale: {
-      intro: 'The forest gate. A lock shaped like three mushrooms. This is fine.',
+      intro: 'The forest gate, now reachable from the lake\'s far shore. A lock shaped like three mushrooms. This is fine.',
       steps: [
         {
           question: 'The keyhole hides behind moss. You use:',
@@ -187,7 +222,39 @@ export const content = {
         },
       ],
       winGame: true,
-      endingText: '★ EPISODE ONE COMPLETE ★ You survived cats, hammers and your own equipment choices. Episode two: the Sauna of Destiny.',
+      setFlag: 'gate_opened', // opens the forest→lakeside exit; finale is now reachable from the far shore
+      endingText: '★ EPISODE ONE COMPLETE ★ You survived cats, hammers and your own equipment choices. Row to the sauna on the far shore for the real finale.',
+    },
+    puzzle_sauna_finale: {
+      // Episode One TRUE finale (docs/23 beat 10): safe-room puzzle, zero enemies (docs/07).
+      intro: 'The lakeside sauna glows through birch trees. Inside: the Long Bench of Destiny.',
+      steps: [
+        {
+          question: 'The sauna demands one final ritual:',
+          choices: ['Settle onto the top bench like it owes you rent', 'Do push-ups for authenticity', 'Ask the stove for life advice'],
+          answerIndex: 0,
+          correctText: 'The bench receives you the way Finland receives silence: completely.',
+          wrongText: 'The sauna politely rejects your cardio energy.',
+        },
+        {
+          question: 'Loyly! Water goes on the stones—',
+          choices: ['Exactly one ladle, traditional', 'The whole bucket, maximalist', 'None, save the drama'],
+          answerIndex: 0,
+          correctText: 'One perfect hiss of steam. The world narrows to warmth and competence.',
+          wrongText: 'The stove steams disapprovingly at bucket-based excess.',
+        },
+        {
+          question: 'Roll in the snow, or:',
+          choices: ['Roll in the snow — tradition is law', 'Stay inside like a legend', 'Challenge the lake itself'],
+          answerIndex: 0,
+          correctText: 'Snow contact achieved. Circulation: heroic. Dignity: improved.',
+          wrongText: 'The sauna judges your indoor tendencies through the wall.',
+        },
+      ],
+      solvedText: 'The sauna hums, satisfied with you specifically.',
+      successText: 'The steam rises in the shape of applause.',
+      winGame: true,
+      endingText: '★ EPISODE ONE COMPLETE ★ Pipe, beer, cats, hammers, one lake crossing — and finally, the sauna. You did the traditional thing. THE END (for now).',
     },
   },
 
@@ -268,10 +335,38 @@ export const content = {
         { id: 'obj_seppo', kind: 'npc', x: 11, y: 6, label: 'Strange figure', action: 'seppo', givesItem: 'item_bread' },
         { id: 'obj_gate', kind: 'puzzle', x: 13, y: 4, label: 'Forest gate', action: 'puzzle', puzzle: 'puzzle_finale',
           conditions: { items: ['item_gate_key'] },
-          lockedText: 'The mushroom lock wants its key. The stove puzzle had one. Just saying.' },
+          lockedText: 'The mushroom lock wants its key. The sauna stove puzzle had one. Just saying.' },
         { id: 'obj_back_home', kind: 'exit', x: 0, y: 4, label: '← Back to yard', action: 'goto', exit: 'back_yard' },
       ],
-      exits: [{ name: 'back_yard', to: 'scene_moi', spawn: { x: 10, y: 4 } }],
+      exits: [
+        { name: 'back_yard', to: 'scene_moi', spawn: { x: 10, y: 4 } },
+        // The solved finale gate opens onto the lakeside shore (docs/10 chain).
+        { name: 'to_lakeside', to: 'scene_lakeside', spawn: { x: 2, y: 5 },
+          conditions: { flags: ['gate_opened'] }, lockedText: 'The gate is locked. Mushroom locks hate pickpockets.' },
+      ],
+    },
+
+    // ---------- Lakeside (docs/10 room expansion; multi-step rowboat chain) ----------
+    {
+      id: 'scene_lakeside',
+      displayName: 'Ranta (Lakeside)',
+      intro: 'A pale lake stretches out. A rowboat, a dock, and a suspiciously well-rested cat.',
+      walk: { width: 12, height: 8, blocked: [[0,0],[11,0],[0,7],[11,7],[9,4],[10,4],[9,5],[10,5]] },
+      objects: [
+        { id: 'obj_dock', kind: 'puzzle', x: 9, y: 3, label: 'Rowboat at dock', action: 'puzzle', puzzle: 'puzzle_lake',
+          conditions: { items: ['item_stick'] },
+          lockedText: 'The rowboat needs oars. Somewhere a stick dreams of promotion.' },
+        { id: 'obj_ring', kind: 'item', x: 4, y: 2, label: 'Life ring', action: 'take', givesItem: 'item_life_ring' },
+        { id: 'obj_cat4', kind: 'hazard', x: 6, y: 1, label: 'Lakeside Perkele Cat', action: 'cat' },
+        { id: 'obj_berry2', kind: 'item', x: 2, y: 6, label: 'Lingonberry bush', action: 'take', givesItem: 'item_berries' },
+        { id: 'obj_back_gate', kind: 'exit', x: 1, y: 5, label: '← Through the gate', action: 'goto', exit: 'back_gate' },
+        { id: 'obj_aittasauna', kind: 'puzzle', x: 10, y: 2, label: 'Aittasauna (lakeside sauna)', action: 'puzzle', puzzle: 'puzzle_sauna_finale' },
+        { id: 'obj_sauna_shore', kind: 'exit', x: 11, y: 6, label: 'Sauna side door →', action: 'goto', exit: 'to_sauna_side' },
+      ],
+      exits: [
+        { name: 'back_gate', to: 'scene_forest', spawn: { x: 12, y: 4 } },
+        { name: 'to_sauna_side', to: 'scene_sauna', spawn: { x: 8, y: 5 } },
+      ],
     },
   ],
 };

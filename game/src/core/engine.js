@@ -40,6 +40,7 @@ export class Engine {
     this.walkTarget = null;
     this.flags = {}; // progression flags
     this.messages = []; // log for UI
+    this.solvedPuzzles = {}; // docs/10 world-state memory: puzzleId -> true (persisted)
     this.hammer = null; // active hammer event runtime state
     this.pendingCatDodge = false; // docs/06: cat engaged as pipe target (dodges)
     this.hazardCooldowns = {}; // hazardId -> readyAt (seconds)
@@ -218,9 +219,15 @@ export class Engine {
       case 'goto':
         this._useExit(obj.exit, obj.spawn);
         break;
-      case 'puzzle':
+      case 'puzzle': {
+        if (this.solvedPuzzles[obj.puzzle]) {
+          const p = this.content.puzzles[obj.puzzle];
+          this.say(p?.solvedText || 'Already solved. It rests in peace and competence.');
+          break;
+        }
         this.say(this.startPuzzle(obj.puzzle)?.intro || 'The puzzle refuses to puzzle today.');
         break;
+      }
       case 'dialogue':
         if (obj.conversation) this.startConversation(obj.conversation);
         else this.dialogue(obj.dialogue);
@@ -402,6 +409,11 @@ export class Engine {
     const puzzle = this.content.puzzles[puzzleId];
     const rt = this.puzzleRuntime[puzzleId];
     if (!puzzle || !rt) return { ok: false };
+    // docs/10 world-state memory: a solved puzzle never re-solves (no reward duplication).
+    if (this.solvedPuzzles[puzzleId]) {
+      this.say(puzzle.solvedText || 'Already solved. It rests in peace and competence.');
+      return { ok: false, alreadySolved: true };
+    }
     const step = puzzle.steps[rt.step];
     if (!step) return { ok: false };
     if (choiceIndex !== step.answerIndex) {
@@ -412,6 +424,8 @@ export class Engine {
     rt.step += 1;
     this.bus.emit(GameEvents.PUZZLE_STEP, { puzzleId, step: rt.step });
     if (rt.step >= puzzle.steps.length) {
+      this.solvedPuzzles[puzzleId] = true; // world-state memory: stays solved (persisted)
+      delete this.puzzleRuntime[puzzleId];
       this.bus.emit(GameEvents.PUZZLE_COMPLETED, { puzzleId });
       this.say(puzzle.successText || 'Puzzle solved! Somewhere a tiny fanfare plays.');
       if (puzzle.setFlag) this.setFlag(puzzle.setFlag);
@@ -687,6 +701,7 @@ export class Engine {
       player: this.player.serialize(),
       hazardCooldowns: { ...this.hazardCooldowns }, // docs/16: hazards stay dangerous across saves
       puzzleRuntime: this.puzzleRuntime,
+      solvedPuzzles: { ...this.solvedPuzzles }, // docs/10: solved puzzles stay solved across saves
       won: this.won,
     };
   }
@@ -700,6 +715,7 @@ export class Engine {
     try {
       this.flags = save.flags || {};
       this.puzzleRuntime = save.puzzleRuntime || {};
+      this.solvedPuzzles = save.solvedPuzzles || {}; // world-state memory restored
       // Cooldowns are absolute clock times; rebase them onto the fresh session
       // so the longest remaining window keeps its length (docs/16 determinism).
       const savedCd = save.hazardCooldowns || {};
